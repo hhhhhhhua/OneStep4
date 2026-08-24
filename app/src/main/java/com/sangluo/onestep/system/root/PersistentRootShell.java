@@ -27,6 +27,10 @@ public final class PersistentRootShell implements AutoCloseable {
         return rootAccessConfirmed;
     }
 
+    public synchronized ShellCommandResult run(String command) {
+        return this.run(command, 10);
+    }
+
     public synchronized ShellCommandResult run(String command, int timeoutSeconds) {
         if (!ensureStarted()) {
             return new ShellCommandResult(-1, "start su failed");

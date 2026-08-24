@@ -328,7 +328,9 @@ public final class RootVirtualDisplayBridge extends Binder {
                     "--user", "0",
                     "--display", String.valueOf(displayId),
                     "-a", "android.intent.action.MAIN",
-                    "-n", "com.sangluo.onestep/.DisplayAccessActivity",
+                    "-n", "com.sangluo.onestepc16"
+                    + "/"
+                    + DisplayAccessActivity.class.getName(),
                     "-f", String.valueOf(0x10010000))
                     .redirectErrorStream(true)
                     .start();
@@ -569,7 +571,7 @@ public final class RootVirtualDisplayBridge extends Binder {
     boolean routeCrossAppLaunch(int sourceDisplayId, String sourcePackage,
                                 Intent intent, String targetPackage) {
         if (intent == null || targetPackage == null || targetPackage.isEmpty()
-                || "com.sangluo.onestep".equals(targetPackage)) {
+                || "com.sangluo.onestepc16".equals(targetPackage)) {
             return false;
         }
         boolean knownDisplay = false;

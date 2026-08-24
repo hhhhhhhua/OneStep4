@@ -3,7 +3,7 @@ package com.sangluo.onestep.data.settings;
 /** Validated snapshot of user-configurable OneStep layout settings. */
 public final class OneStepSettings {
     public static final int MIN_SIDE_WINDOWS = 3;
-    public static final int DEFAULT_SIDE_WINDOWS = 3;
+    public static final int DEFAULT_SIDE_WINDOWS = 6;
     public static final int MAX_SIDE_WINDOWS = 6;
     public static final int DESKTOP_PAGE_ROWS = 4;
     public static final int DESKTOP_PAGE_COLUMNS = 3;

@@ -1,3 +1,5 @@
+import org.gradle.kotlin.dsl.implementation
+
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -43,7 +45,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.sangluo.onestep"
+        applicationId = "com.sangluo.onestepc16"
         minSdk = 29
         targetSdk = 36
         maxSdk = 37
@@ -89,6 +91,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
     implementation(libs.androidx.viewpager2)
+    implementation("com.alibaba:fastjson:2.0.59")
+    compileOnly(files("libs/api-82.jar"))
     implementation(libs.androidx.recyclerview)
     compileOnly("com.aliucord:Aliuhook:1.1.4")
     compileOnly(project(":xposed-api-stubs"))

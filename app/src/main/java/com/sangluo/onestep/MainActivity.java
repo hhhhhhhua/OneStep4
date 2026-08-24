@@ -67,6 +67,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
@@ -110,6 +111,7 @@ import com.sangluo.onestep.ui.window.SideWindowInputShieldController;
 import com.sangluo.onestep.ui.window.WindowAnimationController;
 import com.sangluo.onestep.ui.window.WindowLayoutCalculator;
 import com.sangluo.onestep.ui.window.WindowLayoutModePolicy;
+import com.sangluo.onestep.utils.ExtDisplayUtil;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -254,7 +256,7 @@ public class MainActivity extends Activity {
 
     private final LauncherApp[] windowApps = new LauncherApp[MAX_WINDOWS];
     private final OneStepWindowView[] windowViews = new OneStepWindowView[MAX_WINDOWS];
-    private final EmbeddedAppHost[] embeddedHosts = new EmbeddedAppHost[MAX_WINDOWS];
+    public static final EmbeddedAppHost[] embeddedHosts = new EmbeddedAppHost[MAX_WINDOWS];
     private final int[] embeddedSyncGenerations = new int[MAX_WINDOWS];
     private final boolean[] embeddedSlotClosing = new boolean[MAX_WINDOWS];
     private final List<AppShortcutView> shortcutViews = new ArrayList<>();
@@ -717,14 +719,6 @@ public class MainActivity extends Activity {
             setTheme(R.style.Theme_OneStep40_TransparentNavigation);
         }
         super.onCreate(savedInstanceState);
-        int activityDisplayId = getActivityDisplayId();
-        if (activityDisplayId != Display.DEFAULT_DISPLAY) {
-            nonDefaultDisplayHomeRelay = true;
-            Log.w(TAG, "Redirect HOME activity from virtual display " + activityDisplayId
-                    + " to default display");
-            redirectHomeToDefaultDisplay();
-            return;
-        }
         if (!isCurrentUserUnlocked()) {
             directBootHome = true;
             showDirectBootHome();
@@ -1320,11 +1314,10 @@ public class MainActivity extends Activity {
     }
 
     private void dispatchPhysicalLandscapeRotationToHostedDisplays(int targetRotation) {
-        for (EmbeddedAppHost host : embeddedHosts) {
-            if (host instanceof RootVirtualDisplayHost) {
-                ((RootVirtualDisplayHost) host).onPhysicalLandscapeRotationChanged(
-                        targetRotation);
-            }
+        for(EmbeddedAppHost embeddedHost : embeddedHosts){
+            RootVirtualDisplayHost rootVirtualDisplayHost = (RootVirtualDisplayHost)embeddedHost;
+            int displayId = rootVirtualDisplayHost.getDisplayId();
+            rootVirtualDisplayHost.requestSensorLandscapeRotationAsync(targetRotation, "physical device landscape changed");
         }
     }
 
@@ -4153,6 +4146,26 @@ public class MainActivity extends Activity {
             Log.e(TAG, "Unable to restart OneStep after built-in desktop change", e);
             recreate();
         }
+    }
+
+    @Override
+    public void startActivity(Intent intent) {
+        super.startActivity(intent);
+    }
+
+    @Override
+    public void startActivity(Intent intent, @Nullable Bundle options) {
+        super.startActivity(intent, options);
+    }
+
+    @Override
+    public void startActivityForResult(Intent intent, int requestCode) {
+        super.startActivityForResult(intent, requestCode);
+    }
+
+    @Override
+    public void startActivityForResult(Intent intent, int requestCode, @Nullable Bundle options) {
+        super.startActivityForResult(intent, requestCode, options);
     }
 
     private void prepareEmbeddedResourcesForDesktopRestart() {

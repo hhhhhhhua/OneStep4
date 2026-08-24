@@ -298,9 +298,9 @@ public final class OneStepSettingsStore {
 
     private boolean loadTopComponentsVisible() {
         if (preferences.contains(PREF_TOP_COMPONENTS_VISIBLE)) {
-            return preferences.getBoolean(PREF_TOP_COMPONENTS_VISIBLE, true);
+            return preferences.getBoolean(PREF_TOP_COMPONENTS_VISIBLE, false);
         }
-        boolean visible = preferences.getBoolean(PREF_MEDIA_PLAYER_VISIBLE_LEGACY, true);
+        boolean visible = preferences.getBoolean(PREF_MEDIA_PLAYER_VISIBLE_LEGACY, false);
         preferences.edit()
                 .putBoolean(PREF_TOP_COMPONENTS_VISIBLE, visible)
                 .remove(PREF_MEDIA_PLAYER_VISIBLE_LEGACY)

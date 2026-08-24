@@ -106,9 +106,6 @@ public final class HostedDisplayRotationController implements AutoCloseable {
     private void handleOrientationChanged(int orientation) {
         int landscapeRotation = DeviceOrientationMapper.mapLandscapeRotation(orientation);
         if (landscapeRotation < 0) {
-            if (DeviceOrientationMapper.isStablePortrait(orientation)) {
-                latestLandscapeRotation = -1;
-            }
             return;
         }
         if (landscapeRotation == latestLandscapeRotation) {

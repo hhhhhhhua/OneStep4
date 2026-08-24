@@ -75,9 +75,6 @@ import androidx.annotation.RequiresApi;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.viewpager2.widget.ViewPager2;
 
-import com.sangluo.onestep.data.settings.OneStepSettings;
-import com.sangluo.onestep.data.settings.OneStepSettingsStore;
-import com.sangluo.onestep.data.apps.LauncherAppRepository;
 import com.sangluo.onestep.feature.embedding.EmbeddedAppHost;
 import com.sangluo.onestep.feature.embedding.DeviceOrientationMapper;
 import com.sangluo.onestep.feature.embedding.DismissedAppClosePolicy;
@@ -722,8 +719,22 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         if (!reusingHostedApp && callbacks.isMainPaneSlot(slot)) {
             ensureDisplayImeLocalPolicyAsync("main display app launch " + app.packageName);
         }
-        return continueHostedAppStart(app, launcherIntent, routedLaunchIntent,
+        boolean b = continueHostedAppStart(app, launcherIntent, routedLaunchIntent,
                 startEpoch, reusingHostedApp);
+        this.forbidOrientationRequest();
+        return b;
+    }
+
+    private void forbidOrientationRequest(){
+        if (MainActivity.embeddedHosts.length > 0){
+            for (int i = 0; i < MainActivity.embeddedHosts.length; i++) {
+                EmbeddedAppHost embeddedHost = MainActivity.embeddedHosts[i];
+                RootVirtualDisplayHost rootVirtualDisplayHost = (RootVirtualDisplayHost)embeddedHost;
+                int displayId = rootVirtualDisplayHost.getDisplayId();
+                String shellCmd = "cmd window set-ignore-orientation-request -d "+ displayId +" true";
+                persistentRootShell.run(shellCmd, 10);
+            }
+        }
     }
 
     private boolean continueHostedAppStart(LauncherApp app, Intent launcherIntent,
@@ -2385,16 +2396,12 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 "window switch settled");
     }
 
-    private void requestSensorLandscapeRotationAsync(int targetRotation, String reason) {
-        if (!DeviceOrientationMapper.isLandscapeRotation(targetRotation)
-                || displayId <= DEFAULT_DISPLAY_ID
+    public void requestSensorLandscapeRotationAsync(int targetRotation, String reason) {
+        if (displayId <= DEFAULT_DISPLAY_ID
                 || !hasVirtualDisplay()) {
             return;
         }
         int currentRotation = getTargetDisplayRotation();
-        if (!DeviceOrientationMapper.isLandscapeRotation(currentRotation)) {
-            return;
-        }
         if (currentRotation == targetRotation) {
             if (requestedSensorLandscapeRotation >= 0
                     && requestedSensorLandscapeRotation != targetRotation) {
@@ -2413,9 +2420,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         try {
             rootExecutor.execute(() -> {
                 if (generation != sensorLandscapeRotationGeneration
-                        || displayId != targetDisplayId
-                        || !DeviceOrientationMapper.isLandscapeRotation(
-                        getTargetDisplayRotation())) {
+                        || displayId != targetDisplayId) {
                     clearSensorLandscapeRotationRequest(generation, targetRotation);
                     return;
                 }
