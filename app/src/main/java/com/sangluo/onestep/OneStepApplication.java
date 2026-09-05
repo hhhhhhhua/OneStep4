@@ -49,12 +49,12 @@ public final class OneStepApplication extends Application {
         }
         ShizukuServiceUtil.bindShizukuService();
 
-        try {
+        /*try {
             cpFridaJsToDataDir();
         } catch (IOException e) {
             Log.e(TAG, "初始化frida失败：e: " + e.getMessage());
             throw new RuntimeException(e);
-        }
+        }*/
 
         UserManager userManager = getSystemService(UserManager.class);
         if (userManager == null || userManager.isUserUnlocked()) {

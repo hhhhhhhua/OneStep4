@@ -1,10 +1,13 @@
 package com.sangluo.onestep;
 
 import android.app.Activity;
+import android.app.ActivityOptions;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
+
+import com.sangluo.onestep.utils.ExtDisplayUtil;
 
 /** Opens the OneStep host directly from its launcher icon. */
 public final class HomeRedirectActivity extends Activity {
@@ -25,7 +28,10 @@ public final class HomeRedirectActivity extends Activity {
             appIntent.putExtra(MainActivity.EXTRA_DEFAULT_DISPLAY_RELAY_ATTEMPTED, true);
         }
         try {
-            startActivity(appIntent);
+            ActivityOptions options = ActivityOptions.makeBasic();
+            Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(getApplicationContext());
+            options.setLaunchDisplayId(hdmiDisplayId == null ? 0 : hdmiDisplayId);
+            startActivity(appIntent, options.toBundle());
         } catch (ActivityNotFoundException e) {
             Log.e(TAG, "Unable to open OneStep main activity", e);
         } finally {

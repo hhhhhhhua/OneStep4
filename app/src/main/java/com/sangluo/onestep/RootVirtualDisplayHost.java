@@ -2974,7 +2974,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                     + (SystemClock.uptimeMillis() - startedAt) + "ms): " + description);
             return true;
         }
-        String command = "wm set-ignore-orientation-request -d " + targetDisplayId
+        String command = "cmd window set-ignore-orientation-request -d " + targetDisplayId
                 + " false >/dev/null 2>&1; ignore_status=$?; "
                 + "wm fixed-to-user-rotation -d " + targetDisplayId
                 + " disabled >/dev/null 2>&1; fixed_status=$?; "
@@ -3012,8 +3012,8 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                     + (SystemClock.uptimeMillis() - startedAt) + "ms): " + description);
             return true;
         }
-        String command = "wm set-ignore-orientation-request -d " + targetDisplayId
-                + " false >/dev/null 2>&1; ignore_status=$?; "
+        String command = "cmd window set-ignore-orientation-request -d " + targetDisplayId
+                + " true >/dev/null 2>&1; ignore_status=$?; "
                 + "wm fixed-to-user-rotation -d " + targetDisplayId
                 + " disabled >/dev/null 2>&1; fixed_status=$?; "
                 + "if [ \"$fixed_status\" -ne 0 ]; then "
