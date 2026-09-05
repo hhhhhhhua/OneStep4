@@ -8,6 +8,8 @@ import static org.junit.Assert.assertTrue;
 import android.hardware.display.DisplayManager;
 import android.view.Display;
 
+import com.sangluo.onestep.shizuku.RootInputBridgeService;
+
 import org.junit.Test;
 
 public class RootVirtualDisplayFlagsTest {

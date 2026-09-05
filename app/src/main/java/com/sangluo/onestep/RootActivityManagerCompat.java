@@ -3,11 +3,11 @@ package com.sangluo.onestep;
 import java.lang.reflect.Method;
 
 /** Resolves the activity/task service across the Android 7 through current split. */
-final class RootActivityManagerCompat {
+public final class RootActivityManagerCompat {
     private RootActivityManagerCompat() {
     }
 
-    static Object getTaskService() throws ReflectiveOperationException {
+    public static Object getTaskService() throws ReflectiveOperationException {
         ReflectiveOperationException lastFailure = null;
         String[][] candidates = {
                 {"android.app.ActivityTaskManager", "getService"},

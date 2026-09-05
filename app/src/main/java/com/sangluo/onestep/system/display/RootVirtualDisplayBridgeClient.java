@@ -10,7 +10,9 @@ import android.util.Log;
 import android.view.Surface;
 
 import com.sangluo.onestep.RootVirtualDisplayBridge;
+import com.sangluo.onestep.frida.FridaBridge;
 import com.sangluo.onestep.system.root.SystemServiceFailurePolicy;
+import com.sangluo.onestep.utils.ShizukuServiceUtil;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -190,21 +192,8 @@ public final class RootVirtualDisplayBridgeClient {
         if (service != null && service.isBinderAlive()) {
             return service;
         }
-        try {
-            Class<?> serviceManager = Class.forName("android.os.ServiceManager");
-            Method getService = serviceManager.getDeclaredMethod("getService", String.class);
-            getService.setAccessible(true);
-            Object result = getService.invoke(null,
-                    RootVirtualDisplayBridge.SERVICE_NAME_PREFIX + android.os.Process.myUid());
-            if (!(result instanceof IBinder)) {
-                throw new IllegalStateException("root display service unavailable");
-            }
-            service = (IBinder) result;
-            return service;
-        } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException
-                 | InvocationTargetException e) {
-            throw new IllegalStateException("cannot resolve root display service", e);
-        }
+        service = ShizukuServiceUtil.getService(RootVirtualDisplayBridge.SERVICE_NAME_PREFIX);
+        return service;
     }
 
     private static void writeHeader(Parcel data, String bridgeToken) {

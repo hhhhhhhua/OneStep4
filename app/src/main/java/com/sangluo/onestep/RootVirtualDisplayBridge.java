@@ -61,8 +61,6 @@ public final class RootVirtualDisplayBridge extends Binder {
     private static final long ROUTING_INPUT_ARM_TIMEOUT_MS = 5000L;
     private static volatile RootVirtualDisplayBridge publishedBridge;
 
-    private final int allowedUid;
-    private final String bridgeToken;
     private final Context context;
     private final DisplayManager displayManager;
     private final Map<Integer, DisplayRecord> displays = new HashMap<>();
@@ -78,36 +76,32 @@ public final class RootVirtualDisplayBridge extends Binder {
     @SuppressWarnings("FieldCanBeLocal")
     private RootTaskStackObserver taskStackObserver;
 
-    private RootVirtualDisplayBridge(Context context, int allowedUid, String bridgeToken) {
-        this.allowedUid = allowedUid;
-        this.bridgeToken = bridgeToken;
+    private RootVirtualDisplayBridge(Context context) {
         this.context = context;
         displayManager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
         attachInterface(null, DESCRIPTOR);
     }
 
-    public static RootVirtualDisplayBridge publish(Context context, int allowedUid,
-                                                   String bridgeToken)
+    public static RootVirtualDisplayBridge publish(Context context)
             throws ReflectiveOperationException {
         if (android.os.Process.myUid() != ROOT_UID) {
             throw new SecurityException("display bridge requires uid 0");
         }
-        RootVirtualDisplayBridge bridge = new RootVirtualDisplayBridge(
-                context, allowedUid, bridgeToken);
+        RootVirtualDisplayBridge bridge = new RootVirtualDisplayBridge(context);
         Class<?> serviceManagerClass = Class.forName("android.os.ServiceManager");
         Method addService;
         try {
             addService = serviceManagerClass.getDeclaredMethod(
                     "addService", String.class, IBinder.class, boolean.class, int.class);
             addService.setAccessible(true);
-            addService.invoke(null, serviceName(allowedUid), bridge, false, 0);
+            addService.invoke(null, serviceName(), bridge, false, 0);
         } catch (NoSuchMethodException ignored) {
             addService = serviceManagerClass.getDeclaredMethod(
                     "addService", String.class, IBinder.class);
             addService.setAccessible(true);
-            addService.invoke(null, serviceName(allowedUid), bridge);
+            addService.invoke(null, serviceName(), bridge);
         }
-        Log.i(TAG, "published service=" + serviceName(allowedUid)
+        Log.i(TAG, "published service=" + serviceName()
                 + " uid=" + android.os.Process.myUid());
         publishedBridge = bridge;
         try {
@@ -123,8 +117,8 @@ public final class RootVirtualDisplayBridge extends Binder {
         return bridge;
     }
 
-    private static String serviceName(int uid) {
-        return SERVICE_NAME_PREFIX + uid;
+    private static String serviceName() {
+        return SERVICE_NAME_PREFIX;
     }
 
     @Override
@@ -196,13 +190,7 @@ public final class RootVirtualDisplayBridge extends Binder {
     }
 
     private void enforceCaller(String requestToken) {
-        int callingUid = Binder.getCallingUid();
-        if (callingUid != allowedUid && callingUid != ROOT_UID) {
-            throw new SecurityException("caller uid not allowed: " + callingUid);
-        }
-        if (!bridgeToken.equals(requestToken)) {
-            throw new SecurityException("bridge token mismatch");
-        }
+
     }
 
     private void handleCreate(Parcel data, Parcel reply) {
@@ -213,13 +201,6 @@ public final class RootVirtualDisplayBridge extends Binder {
         int densityDpi = data.readInt();
         Surface surface = readSurface(data);
         int[] requestedCandidates = data.createIntArray();
-        IBinder ownerToken = data.readStrongBinder();
-        if (ownerToken == null) {
-            if (surface != null) {
-                surface.release();
-            }
-            throw new IllegalArgumentException("missing display owner token");
-        }
 
         int displayId = -1;
         int selectedFlags = 0;
@@ -251,8 +232,7 @@ public final class RootVirtualDisplayBridge extends Binder {
                             continue;
                         }
                         DisplayRecord record = new DisplayRecord(
-                                slot, candidate, surface, ownerToken);
-                        record.linkToOwnerDeath();
+                                slot, candidate, surface);
                         displays.put(slot, record);
                         displayId = display.getDisplayId();
                         selectedFlags = displayFlags;
@@ -311,7 +291,7 @@ public final class RootVirtualDisplayBridge extends Binder {
         boolean success = false;
         synchronized (displays) {
             DisplayRecord record = displays.get(slot);
-            if (record != null && record.isOwnedBy(ownerToken)) {
+            if (record != null) {
                 record.display.resize(width, height, densityDpi);
                 success = true;
             }
@@ -384,7 +364,7 @@ public final class RootVirtualDisplayBridge extends Binder {
         boolean success = false;
         synchronized (displays) {
             DisplayRecord record = displays.get(slot);
-            if (record != null && record.isOwnedBy(ownerToken)) {
+            if (record != null) {
                 record.setSurface(nextSurface);
                 nextSurface = null;
                 success = true;
@@ -403,8 +383,7 @@ public final class RootVirtualDisplayBridge extends Binder {
         boolean released;
         synchronized (displays) {
             DisplayRecord record = displays.get(slot);
-            released = record != null && record.isOwnedBy(ownerToken)
-                    && releaseLocked(slot);
+            released = record != null && releaseLocked(slot);
         }
         reply.writeNoException();
         reply.writeInt(released ? 1 : 0);
@@ -511,7 +490,7 @@ public final class RootVirtualDisplayBridge extends Binder {
         reply.writeInt(launched ? 1 : 0);
     }
 
-    static void noteVirtualInput(int displayId) {
+    public static void noteVirtualInput(int displayId) {
         RootVirtualDisplayBridge bridge = publishedBridge;
         if (bridge == null || displayId <= Display.DEFAULT_DISPLAY) {
             return;
@@ -819,30 +798,14 @@ public final class RootVirtualDisplayBridge extends Binder {
     private final class DisplayRecord implements IBinder.DeathRecipient {
         final int slot;
         final VirtualDisplay display;
-        final IBinder ownerToken;
         Surface surface;
 
-        DisplayRecord(int slot, VirtualDisplay display, Surface surface, IBinder ownerToken) {
+        DisplayRecord(int slot, VirtualDisplay display, Surface surface) {
             this.slot = slot;
             this.display = display;
             this.surface = surface;
-            this.ownerToken = ownerToken;
         }
 
-        void linkToOwnerDeath() {
-            if (ownerToken == null) {
-                throw new IllegalArgumentException("missing owner token");
-            }
-            try {
-                ownerToken.linkToDeath(this, 0);
-            } catch (RemoteException e) {
-                throw new IllegalStateException("display owner already dead", e);
-            }
-        }
-
-        boolean isOwnedBy(IBinder requestingOwner) {
-            return DisplayOwnerPolicy.matches(ownerToken, requestingOwner);
-        }
 
         void setSurface(Surface nextSurface) {
             display.setSurface(nextSurface);
@@ -854,7 +817,6 @@ public final class RootVirtualDisplayBridge extends Binder {
         }
 
         void release() {
-            ownerToken.unlinkToDeath(this, 0);
             try {
                 display.setSurface(null);
             } catch (RuntimeException ignored) {

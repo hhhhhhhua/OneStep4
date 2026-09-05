@@ -3,8 +3,13 @@ package com.sangluo.onestep.utils;
 import android.content.Context;
 import android.hardware.display.DisplayManager;
 import android.os.Build;
+import android.os.IBinder;
 import android.util.Log;
 import android.view.Display;
+
+import com.sangluo.onestep.OneStepApplication;
+
+import rikka.shizuku.SystemServiceHelper;
 
 public class ExtDisplayUtil {
 
@@ -44,35 +49,39 @@ public class ExtDisplayUtil {
 
     /**
      * 获取外接屏幕 DisplayId
-     * @param context
      * @return
      */
-    public static Integer getHdmiDisplayId(Context context) throws NoSuchFieldException, IllegalAccessException, ClassNotFoundException {
-        DisplayManager displayManager = (DisplayManager)context.getSystemService(Context.DISPLAY_SERVICE);
-        Display[] displays = displayManager.getDisplays();
-        if (displays != null && displays.length > 0){
-            for (int i = 0; i < displays.length; i++) {
-                Display d = displays[i];
-                boolean internal = true;
-                if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
-                    internal = d.isInternal();
-                }else{
-                    if (d.getDisplayId() != 0){
-                        internal = false;
+    public static Integer getHdmiDisplayId() {
+        try{
+            DisplayManager displayManager = (DisplayManager) OneStepApplication.getContext().getSystemService(Context.DISPLAY_SERVICE);
+            Display[] displays = displayManager.getDisplays();
+            if (displays != null && displays.length > 0){
+                for (int i = 0; i < displays.length; i++) {
+                    Display d = displays[i];
+                    boolean internal = true;
+                    if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+                        internal = d.isInternal();
+                    }else{
+                        if (d.getDisplayId() != 0){
+                            internal = false;
+                        }
+                    }
+
+                    String s = "[" + i + "]" +
+                            " displayId=" + d.getDisplayId() +
+                            " name=" + d.getName() +
+                            " state=" + d.getState() +
+                            " size=" + d.getWidth() + "x" + d.getHeight();
+                    Log.i(TAG, s);
+
+                    if (!internal){
+                        return d.getDisplayId();
                     }
                 }
-
-                String s = "[" + i + "]" +
-                        " displayId=" + d.getDisplayId() +
-                        " name=" + d.getName() +
-                        " state=" + d.getState() +
-                        " size=" + d.getWidth() + "x" + d.getHeight();
-                Log.i(TAG, s);
-
-                if (!internal){
-                    return d.getDisplayId();
-                }
             }
+        }catch (Exception e){
+            Log.e(TAG, "getHdmiDisplayId e: "+e.getMessage());
+            e.printStackTrace();
         }
         return null;
     }

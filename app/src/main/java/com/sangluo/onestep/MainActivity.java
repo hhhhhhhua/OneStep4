@@ -15,6 +15,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherApps;
@@ -38,6 +39,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
@@ -50,6 +52,7 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -90,8 +93,10 @@ import com.sangluo.onestep.feature.drag.ImageFileNamePolicy;
 import com.sangluo.onestep.feature.drag.ImageShareTargetPolicy;
 import com.sangluo.onestep.feature.logging.SessionLogRecorder;
 import com.sangluo.onestep.feature.tasks.RunningTaskAppResolver;
+import com.sangluo.onestep.frida.FridaBridge;
 import com.sangluo.onestep.model.LauncherApp;
 import com.sangluo.onestep.model.PinnedTaskState;
+import com.sangluo.onestep.shizuku.ShizukuKeyService;
 import com.sangluo.onestep.system.root.PersistentRootShell;
 import com.sangluo.onestep.system.root.ShellCommandResult;
 import com.sangluo.onestep.system.root.ZygiskHookConfig;
@@ -111,7 +116,6 @@ import com.sangluo.onestep.ui.window.SideWindowInputShieldController;
 import com.sangluo.onestep.ui.window.WindowAnimationController;
 import com.sangluo.onestep.ui.window.WindowLayoutCalculator;
 import com.sangluo.onestep.ui.window.WindowLayoutModePolicy;
-import com.sangluo.onestep.utils.ExtDisplayUtil;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -128,6 +132,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -136,6 +141,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static com.sangluo.onestep.data.settings.OneStepSettings.CORNER_TRIGGER_SENSITIVITY_DEFAULT;
 import static com.sangluo.onestep.data.settings.OneStepSettings.ONE_STEP_TRIGGER_AREA_SCALE_DEFAULT;
@@ -160,6 +167,8 @@ import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeTopAppSt
 import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeTopAppStripVerticalPaddingScale;
 import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeOneStepTriggerAreaScale;
 import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeTopNavVerticalMarginScale;
+
+import rikka.shizuku.Shizuku;
 
 public class MainActivity extends Activity {
     private static final String TAG = "OneStep40";
@@ -251,7 +260,8 @@ public class MainActivity extends Activity {
             "android.permission.START_ACTIVITIES_FROM_BACKGROUND",
             "android.permission.ADD_TRUSTED_DISPLAY",
             "android.permission.MEDIA_CONTENT_CONTROL",
-            "android.permission.STATUS_BAR"
+            "android.permission.STATUS_BAR",
+            "android.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY"
     };
 
     private final LauncherApp[] windowApps = new LauncherApp[MAX_WINDOWS];
@@ -302,6 +312,102 @@ public class MainActivity extends Activity {
     private int launcherIconDensityDpi;
     private int launcherIconUiModeNight;
     private String launcherIconLocales = "";
+    private static IShizukuKeyService mKeyService;
+    private static boolean one_step_mode_flag = false;
+    private static boolean focusFlag = false;
+    private static final Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
+            new ComponentName("com.sangluo.onestepc16", ShizukuKeyService.class.getName())
+    )
+            .daemon(false)
+            .processNameSuffix("key_filter")
+            .version(1);
+    private static final ServiceConnection mConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            // 拿到 Shizuku 进程传回来的 Binder 代理
+            mKeyService = IShizukuKeyService.Stub.asInterface(service);
+            try {
+                // 监听 Shizuku 进程发来的 ESC 事件回调
+                mKeyService.setCallback(new IEscCallback.Stub() {
+                    private long lastClickTime = 0;
+                    private static final long DEBOUNCE_DELAY = 400; // 400ms 防抖
+
+                    @Override
+                    public void onEscPressed(String key_type) {
+                        long currentTime = System.currentTimeMillis();
+                        // 1. 防抖检查
+                        if (currentTime - lastClickTime < DEBOUNCE_DELAY) {
+                            Log.w(TAG, "忽略重复的按键触发信号");
+                            return;
+                        }
+                        lastClickTime = currentTime;
+
+                        // 2. 切换到主线程执行 UI 和模式切换逻辑
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            MainActivity that = defaultDisplayInstance.get();
+                            if (Objects.equals(key_type, "KEY_ESC") && !focusFlag){
+                                Log.d(TAG, "全局 ESC 触发成功！当前状态: " + one_step_mode_flag);
+                                if (one_step_mode_flag) {
+                                    that.exitOneStepMode();
+                                } else {
+                                    that.enterOneStepMode(true);
+                                }
+                                one_step_mode_flag = !one_step_mode_flag;
+                            }else if(Objects.equals(key_type, "KEY_F1")){
+                                // 释放设备绑定
+                                Log.d(TAG, "全局 KEY_F1 触发成功！释放设备绑定: ");
+                                int displayId = 0;
+                                if (focusFlag){
+                                    Integer hdmiDisplayIdBridge = FridaBridge.getHdmiDisplayIdBridge();
+                                    displayId = hdmiDisplayIdBridge != null ? hdmiDisplayIdBridge : 0;
+                                    FridaBridge.startFixedPollingMonitorSyncBridge(displayId);
+                                }else{
+                                    displayId = ((RootVirtualDisplayHost) embeddedHosts[that.activeMainSlot]).getDisplayId();
+                                    FridaBridge.startFixedPollingMonitorSyncBridge(displayId);
+                                }
+                                focusFlag = !focusFlag;
+                            }else if (key_type.matches(".*KEY_[1-7].*DOWN.*") && !focusFlag) {
+                                Matcher matcher = Pattern.compile("KEY_([1-7])").matcher(key_type);
+
+                                if (matcher.find()) {
+                                    int slot = Integer.parseInt(matcher.group(1)) - 1;
+
+                                    if (that.isMainPaneSlot(slot)) {
+                                        that.activateMainPane(slot, true);
+                                    } else {
+                                        that.handleSideSlotClick(slot);
+                                    }
+                                    if (that.activeMainSlot == slot){
+                                        if (one_step_mode_flag) {
+                                            that.exitOneStepMode();
+                                        } else {
+                                            that.enterOneStepMode(true);
+                                        }
+                                        one_step_mode_flag = !one_step_mode_flag;
+                                    }
+                                }
+                            }
+
+                        });
+                    }
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "onServiceConnected e: "+e.getMessage());
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            mKeyService = null;
+            Shizuku.unbindUserService(args, mConnection, true);
+        }
+    };
+
+    public static void changeFocusFlag(boolean focusFlag){
+        MainActivity.focusFlag = focusFlag;
+    }
+
     private final BroadcastReceiver launcherIconChangeReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -730,6 +836,12 @@ public class MainActivity extends Activity {
         initializeFullHome();
     }
 
+
+    public static void startEscListener() {
+        // 绑定注册 Shizuku UserService
+        Shizuku.bindUserService(args, mConnection);
+    }
+
     /** Builds the HOME surface while keeping the already-rendered Direct Boot surface alive. */
     private void initializeFullHome() {
         directBootHome = false;
@@ -840,7 +952,6 @@ public class MainActivity extends Activity {
         kernelSuAuthorizationReturnPending = false;
         kernelSuAuthorizationRecoveryInFlight = true;
         hookSettingsExecutor.execute(() -> {
-            persistentRootShell.close();
             ShellCommandResult result = runMainPrivilegedCommand(
                     "id -u", "verify ROOT authorization after KernelSU return", false);
             boolean granted = result.isSuccess() && outputContainsLine(result.output, "0");
@@ -874,6 +985,14 @@ public class MainActivity extends Activity {
         }
         prewarmRootInputBridge();
         scheduleHostedDisplayFocus("ROOT authorization granted");
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent ev) {
+        /*Log.d(TAG,
+                        " x=" + ev.getX() +
+                        " y=" + ev.getY());*/
+        return super.dispatchGenericMotionEvent(ev);
     }
 
     @Override
@@ -1960,11 +2079,9 @@ public class MainActivity extends Activity {
         }
         displayImePolicyExecutor.shutdownNow();
         try {
-            sensorPolicyExecutor.execute(persistentRootShell::close);
             sensorPolicyExecutor.shutdown();
         } catch (RuntimeException e) {
             sensorPolicyExecutor.shutdownNow();
-            persistentRootShell.close();
         }
     }
 
@@ -2188,7 +2305,6 @@ public class MainActivity extends Activity {
         runningTaskExecutor.shutdownNow();
         launcherIconExecutor.shutdownNow();
         imageDragIoExecutor.shutdownNow();
-        persistentRootShell.close();
     }
 
     private void registerSystemBackCallback() {
@@ -3266,6 +3382,23 @@ public class MainActivity extends Activity {
 
         HorizontalScrollView scrollView = new HorizontalScrollView(this);
         topAppStripScrollView = scrollView;
+        scrollView.setOnGenericMotionListener((v, event) -> {
+            if (event.getActionMasked() != MotionEvent.ACTION_SCROLL) {
+                return false;
+            }
+            if ((event.getSource() & InputDevice.SOURCE_MOUSE) == 0) {
+                return false;
+            }
+            float delta = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            if (delta > 0) {
+                // 滚轮向上 → 向左翻页
+                scrollTopAppStripPage(-1);
+            } else if (delta < 0) {
+                // 滚轮向下 → 向右翻页
+                scrollTopAppStripPage(1);
+            }
+            return true;
+        });
         scrollView.setHorizontalScrollBarEnabled(false);
         scrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         stripRoot.addView(scrollView, new FrameLayout.LayoutParams(

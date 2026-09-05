@@ -93,6 +93,7 @@ import com.sangluo.onestep.feature.embedding.VirtualDisplayViewportPolicy;
 import com.sangluo.onestep.feature.embedding.VirtualNavigationInputPolicy;
 import com.sangluo.onestep.feature.navigation.NavigationDisplayFormatter;
 import com.sangluo.onestep.feature.media.MediaSessionCoordinator;
+import com.sangluo.onestep.frida.FridaBridge;
 import com.sangluo.onestep.hook.OneStepPrimaryHomePolicy;
 import com.sangluo.onestep.model.LauncherApp;
 import com.sangluo.onestep.model.PinnedTaskState;
@@ -114,6 +115,9 @@ import com.sangluo.onestep.ui.widget.PagingHorizontalScrollView;
 import com.sangluo.onestep.ui.window.OneStepWindowView;
 import com.sangluo.onestep.ui.window.WindowLayoutCalculator;
 import com.sangluo.onestep.ui.window.OneStepWindowView;
+import com.sangluo.onestep.utils.DeviceUtil;
+import com.sangluo.onestep.utils.ExtDisplayUtil;
+import com.sangluo.onestep.utils.ShizukuServiceUtil;
 
 import java.lang.reflect.Method;
 import java.io.File;
@@ -227,7 +231,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     private static final int WINDOW_SURFACE_RESTING_LAYER_BASE = -10_000;
     private static final int ROOT_INPUT_BRIDGE_CONNECT_LOG_THROTTLE_MS = 2000;
     private static final int ROOT_INPUT_BRIDGE_START_THROTTLE_MS = 800;
-    private static final int ROOT_INPUT_BRIDGE_READY_TIMEOUT_MS = 2000;
+    private static final int ROOT_INPUT_BRIDGE_READY_TIMEOUT_MS = 30000;
     private static final int ROOT_INPUT_BRIDGE_READY_RETRY_MS = 50;
     private static final int ROOT_DISPLAY_REGISTRATION_TIMEOUT_MS = 800;
     private static final int DISPLAY_IME_POLICY_READY_TIMEOUT_MS = 2000;
@@ -315,7 +319,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     private final RootVirtualDisplayBridgeClient rootVirtualDisplayBridgeClient =
             new RootVirtualDisplayBridgeClient();
     private final int slot;
-    private volatile boolean rootAvailable;
     private final boolean systemLaunchAvailable;
 
     private volatile VirtualDisplay virtualDisplay;
@@ -433,35 +436,22 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         FrameLayout.LayoutParams matchParent = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         hostView.addView(surfaceView, matchParent);
-        rootAvailable = hasSuCommand();
         systemLaunchAvailable = hasGrantedSystemEmbeddingPermission() || isSystemAppInstall();
         if (!bridgePrewarmOnly) {
             recoverStaleSensorServiceUidOverridesAsync();
         }
-        if (!rootAvailable && !systemLaunchAvailable) {
-            unavailableReason = "未检测到 su 或 system/priv-app 权限";
-        }
     }
 
     PinnedTaskState queryPinnedTaskState() {
-        if (!rootAvailable || !startRootInputBridgeIfNeeded(false)) {
-            return null;
-        }
         return rootInputBridgeClient.getPinnedTaskState(getRootInputBridgeToken());
     }
 
     boolean dockPinnedTask(int taskId, Rect targetBounds, Rect restoreBounds) {
-        if (!rootAvailable || !startRootInputBridgeIfNeeded(false)) {
-            return false;
-        }
         return rootInputBridgeClient.dockPinnedTask(getRootInputBridgeToken(), taskId,
                 targetBounds, restoreBounds);
     }
 
     boolean undockPinnedTask(int taskId, Rect restoreBounds) {
-        if (!rootAvailable || !startRootInputBridgeIfNeeded(false)) {
-            return false;
-        }
         return rootInputBridgeClient.undockPinnedTask(getRootInputBridgeToken(), taskId,
                 restoreBounds);
     }
@@ -605,7 +595,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
 
     @Override
     public boolean isAvailable() {
-        return displayManager != null && (rootAvailable || systemLaunchAvailable);
+        return displayManager != null;
     }
 
     @Override
@@ -664,9 +654,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
 
     private boolean start(LauncherApp app, boolean forceLaunch) {
         if (!isAvailable()) {
-            if (!rootAvailable) {
-                callbacks.showRootAuthorizationHint();
-            }
             return false;
         }
         if (embeddedSlotClosing[slot]) {
@@ -767,8 +754,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         invalidateTaskResolution();
 
         syncLaunchRoutingSource();
-        rootVirtualDisplayBridgeClient.allowNextLaunch(
-                getRootInputBridgeToken(), app.packageName);
+        rootVirtualDisplayBridgeClient.allowNextLaunch(getRootInputBridgeToken(), app.packageName);
 
         boolean directImageShare = routedLaunchIntent != null
                 && routedLaunchIntent.getBooleanExtra(
@@ -804,8 +790,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
 
         Intent requestedLaunchIntent = routedLaunchIntent != null
                 ? routedLaunchIntent : launcherIntent;
-        boolean preferDirectUserLaunch = rootAvailable
-                && routedLaunchIntent == null
+        boolean preferDirectUserLaunch = routedLaunchIntent == null
                 && !app.isHomeEntry();
         if (!preferDirectUserLaunch
                 && systemLaunchAvailable && !skipActivityOptionsLaunch
@@ -989,8 +974,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 generation, app, startEpoch, targetDisplayId)) {
             return;
         }
-        rootVirtualDisplayBridgeClient.allowNextLaunch(
-                getRootInputBridgeToken(), app.packageName);
+        rootVirtualDisplayBridgeClient.allowNextLaunch(getRootInputBridgeToken(), app.packageName);
         boolean routed = startWithActivityOptions(
                 routedIntent, app, startEpoch, false);
         if (routed && routedIntent.getBooleanExtra(
@@ -1022,7 +1006,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     }
 
     private void validateReusedHostedApp(LauncherApp app, int startEpoch) {
-        if (!rootAvailable || hostedTaskValidationInFlight
+        if (hostedTaskValidationInFlight
                 || displayId <= DEFAULT_DISPLAY_ID) {
             return;
         }
@@ -1092,11 +1076,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
             return;
         }
         if (!resetSensorServiceUidOverride()) {
-            return;
-        }
-        if (!rootAvailable) {
-            Log.w(TAG, "Hosted sensor isolation unavailable without root: slot=" + slot
-                    + ", display=" + displayId + ", package=" + packageName);
             return;
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
@@ -1193,9 +1172,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         if (TextUtils.isEmpty(packageName)) {
             return true;
         }
-        if (!rootAvailable) {
-            return false;
-        }
         String command = buildSensorUidResetCommand(packageName);
         ShellCommandResult result = runPrivilegedCommand(command,
                 "restore hosted sensors for " + packageName, true);
@@ -1252,9 +1228,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
             }
         }
         Set<String> packages = getRecordedSensorUidOverrides();
-        if (packages.isEmpty() || !rootAvailable) {
-            return;
-        }
         for (String packageName : packages) {
             ShellCommandResult result = runPrivilegedCommand(
                     buildSensorUidResetCommand(packageName),
@@ -1699,8 +1672,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
             Log.w(TAG, "No resolved task ID while dismissing app: " + packageName);
             return;
         }
-        boolean removed = startRootInputBridgeIfNeeded(false)
-                && rootInputBridgeClient.removeTask(getRootInputBridgeToken(), taskId);
+        boolean removed = rootInputBridgeClient.removeTask(getRootInputBridgeToken(), taskId);
         if (!removed) {
             Log.e(TAG, "Remove dismissed app task failed: package=" + packageName
                     + ", taskId=" + taskId);
@@ -1927,8 +1899,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
             return false;
         }
         syncLaunchRoutingSource();
-        rootVirtualDisplayBridgeClient.allowNextLaunch(
-                getRootInputBridgeToken(), app.packageName);
+        rootVirtualDisplayBridgeClient.allowNextLaunch(getRootInputBridgeToken(), app.packageName);
         boolean launched = startWithActivityOptions(
                 shareIntent, app, startEpoch, false);
         if (!launched) {
@@ -2261,6 +2232,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 + " pointers=" + pointerCount
                 + " x=" + formatCoordinate(x)
                 + " y=" + formatCoordinate(y));
+//        FridaBridge.startFixedPollingMonitorSyncBridge(targetDisplayId);
     }
 
     private boolean sendKeyThroughDirectBridge(int targetDisplayId, int keyCode) {
@@ -2272,6 +2244,9 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         return false;
     }
 
+    private static int curDisplayId = 0;
+    private static int lastDisplayId = 999;
+    private static boolean isFirstRun = true;
     void focusHostedDisplayAsync(String reason, Runnable onFinished) {
         final int targetDisplayId = displayId;
         final int requestGeneration = ++focusRequestGeneration;
@@ -2283,8 +2258,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                         && slot == callbacks.activeMainSlot()
                         && !callbacks.isActivityDestroyed();
                 boolean focused = currentRequest && targetDisplayId > DEFAULT_DISPLAY_ID
-                        && rootInputBridgeClient.focusHostedDisplay(
-                        getRootInputBridgeToken(), targetDisplayId);
+                        && rootInputBridgeClient.focusHostedDisplay(getRootInputBridgeToken(), targetDisplayId);
                 if (currentRequest && !focused) {
                     Log.w(TAG, "Focus promoted display failed: slot=" + slot
                             + ", display=" + targetDisplayId + ", reason=" + reason);
@@ -2301,13 +2275,24 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 mainHandler.post(onFinished);
             }
         }
+        /*lastDisplayId = curDisplayId;
+        curDisplayId = displayId;
+        if (curDisplayId != lastDisplayId){
+            FridaBridge.startFixedPollingMonitorSyncBridge(this.getDisplayId());
+        }*/
+        if (isFirstRun){
+            Integer hdmiDisplayIdBridge = FridaBridge.getHdmiDisplayIdBridge();
+            Integer hdmiDisplayId = hdmiDisplayIdBridge != null ? hdmiDisplayIdBridge : 0;
+            FridaBridge.startFixedPollingMonitorSyncBridge(hdmiDisplayId);
+            isFirstRun = false;
+        }
     }
 
     boolean moveSystemTaskToHostedDisplay(int taskId, String componentName) {
         ComponentName component = ComponentName.unflattenFromString(componentName);
         return taskId > 0 && displayId > DEFAULT_DISPLAY_ID && component != null
                 && rootInputBridgeClient.moveTaskToDisplay(
-                getRootInputBridgeToken(), taskId, displayId, component);
+                        getRootInputBridgeToken(), taskId, displayId, component);
     }
 
     void dismissHostedSystemRecents() {
@@ -2325,7 +2310,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     }
 
     private void scheduleRootInputBridgeRecovery() {
-        if (!rootAvailable || rootInputBridgeRecoveryScheduled) {
+        if (rootInputBridgeRecoveryScheduled) {
             return;
         }
         rootInputBridgeRecoveryScheduled = true;
@@ -2555,8 +2540,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
 
     private boolean setHostedDisplaySurface(Surface surface) {
         if (rootManagedVirtualDisplay) {
-            return rootVirtualDisplayBridgeClient.setSurface(
-                    getRootInputBridgeToken(), slot, surface);
+            return rootVirtualDisplayBridgeClient.setSurface(getRootInputBridgeToken(), slot, surface);
         }
         VirtualDisplay directDisplay = virtualDisplay;
         if (directDisplay == null) {
@@ -2779,52 +2763,40 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         if (targetDisplayId != displayId || !hasVirtualDisplay()) {
             return false;
         }
-        Integer beforePolicy = rootAvailable
-                ? null : getDisplayImePolicyThroughWindowManager(targetDisplayId);
+        Integer beforePolicy = null;
 
         boolean windowManagerRequested = false;
-        if (!rootAvailable) {
-            windowManagerRequested = setDisplayImePolicyThroughWindowManager(targetDisplayId,
-                    DISPLAY_IME_POLICY_LOCAL_HIDDEN);
-        }
         Integer actualPolicy;
         boolean rootBridgeRequested = false;
-        if (rootAvailable) {
-            rootBridgeRequested = true;
+        rootBridgeRequested = true;
+        actualPolicy = rootInputBridgeClient.setDisplayImePolicy(
+                getRootInputBridgeToken(), targetDisplayId,
+                DISPLAY_IME_POLICY_LOCAL_HIDDEN);
+        if (actualPolicy == null && targetDisplayId == displayId
+                && hasVirtualDisplay()) {
+            // A prewarm may have been in flight when the first request failed. Retry the
+            // shell bridge once before treating this as a capability failure.
+            ensureRootInputBridgeStarted(false, true);
             actualPolicy = rootInputBridgeClient.setDisplayImePolicy(
                     getRootInputBridgeToken(), targetDisplayId,
                     DISPLAY_IME_POLICY_LOCAL_HIDDEN);
             if (actualPolicy == null && targetDisplayId == displayId
                     && hasVirtualDisplay()) {
-                // A prewarm may have been in flight when the first request failed. Retry the
-                // shell bridge once before treating this as a capability failure.
-                ensureRootInputBridgeStarted(false, true);
+                ensureRootInputBridgeStarted(true, true);
                 actualPolicy = rootInputBridgeClient.setDisplayImePolicy(
                         getRootInputBridgeToken(), targetDisplayId,
                         DISPLAY_IME_POLICY_LOCAL_HIDDEN);
-                if (actualPolicy == null && targetDisplayId == displayId
-                        && hasVirtualDisplay()) {
-                    ensureRootInputBridgeStarted(true, true);
-                    actualPolicy = rootInputBridgeClient.setDisplayImePolicy(
-                            getRootInputBridgeToken(), targetDisplayId,
-                            DISPLAY_IME_POLICY_LOCAL_HIDDEN);
-                }
             }
-        } else {
-            actualPolicy = getDisplayImePolicyThroughWindowManager(targetDisplayId);
         }
         boolean configured = actualPolicy != null
                 ? actualPolicy == DISPLAY_IME_POLICY_LOCAL_HIDDEN
-                : !rootAvailable && windowManagerRequested;
+                : false;
         if (configured && targetDisplayId == displayId && hasVirtualDisplay()) {
             imePolicyConfiguredDisplayId = targetDisplayId;
         }
-        String rootVerification = !rootAvailable ? "unavailable"
-                : actualPolicy == null ? "deferred"
+        String rootVerification = actualPolicy == null ? "deferred"
                 : configured ? "confirmed" : "failed";
-        String policyBackend = rootAvailable && actualPolicy != null
-                ? "WindowManager(root-bridge)"
-                : rootAvailable ? "WindowManager(root-bridge)" : "WindowManager";
+        String policyBackend = "WindowManager(root-bridge)";
         int logPriority = configured ? Log.INFO : Log.WARN;
         Log.println(logPriority, TAG, "Virtual display IME policy: slot=" + slot
                 + ", display=" + targetDisplayId
@@ -2976,11 +2948,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     }
 
     private void configureNativeDisplayOrientationAsync(int targetDisplayId, String reason) {
-        if (!rootAvailable || targetDisplayId <= DEFAULT_DISPLAY_ID) {
-            Log.w(TAG, "Content-driven display rotation unavailable: display="
-                    + targetDisplayId + ", root=" + rootAvailable);
-            return;
-        }
         try {
             rootExecutor.execute(() -> {
                 if (displayId != targetDisplayId) {
@@ -3027,10 +2994,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         final LauncherApp targetApp = slot >= 0 && slot < MAX_WINDOWS
                 ? windowApps[slot] : null;
         if (!canResolveHostedTask() || hostedTaskId > 0 || taskResolutionInFlight) {
-            return;
-        }
-        if (!rootAvailable) {
-            showRootAuthorizationHintIfContentUnavailable();
             return;
         }
         taskResolutionInFlight = true;
@@ -3235,80 +3198,39 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         boolean homeSupportRequested = false;
         String homeSupportFailure = "";
         String failures = "";
-        if (rootAvailable) {
-            if (!startRootInputBridgeIfNeeded(false, true)) {
-                unavailableReason = "root 虚拟显示桥未就绪";
-                Log.e(TAG, unavailableReason + " for slot " + slot);
-                return;
+        if (!startRootInputBridgeIfNeeded(false, true)) {
+            unavailableReason = "root 虚拟显示桥未就绪";
+            Log.e(TAG, unavailableReason + " for slot " + slot);
+            return;
+        }
+        RootVirtualDisplayBridgeClient.CreateResult result =
+                rootVirtualDisplayBridgeClient.create(
+                        getRootInputBridgeToken(), slot, displayName,
+                        spec.width, spec.height, spec.densityDpi,
+                        holder.getSurface(), flagCandidates);
+        if (result.isStaleSystemServiceFailure()) {
+            Log.w(TAG, "Restart stale root display bridge before retrying slot " + slot);
+            rootVirtualDisplayBridgeClient.close();
+            if (startRootInputBridgeIfNeeded(true, true)) {
+                result = rootVirtualDisplayBridgeClient.create(
+                        getRootInputBridgeToken(), slot, displayName,
+                        spec.width, spec.height, spec.densityDpi,
+                        holder.getSurface(), flagCandidates);
             }
-            RootVirtualDisplayBridgeClient.CreateResult result =
-                    rootVirtualDisplayBridgeClient.create(
-                            getRootInputBridgeToken(), slot, displayName,
-                            spec.width, spec.height, spec.densityDpi,
-                            holder.getSurface(), flagCandidates);
-            if (result.isStaleSystemServiceFailure()) {
-                Log.w(TAG, "Restart stale root display bridge before retrying slot " + slot);
-                rootVirtualDisplayBridgeClient.close();
-                if (startRootInputBridgeIfNeeded(true, true)) {
-                    result = rootVirtualDisplayBridgeClient.create(
-                            getRootInputBridgeToken(), slot, displayName,
-                            spec.width, spec.height, spec.densityDpi,
-                            holder.getSurface(), flagCandidates);
-                }
-            }
-            if (result.isSuccess()) {
-                rootManagedVirtualDisplay = true;
-                displayId = result.displayId;
-                selectedFlags = result.selectedFlags;
-                homeSupportRequested = result.homeSupportRequested;
-                homeSupportFailure = result.homeSupportFailure;
-                primaryHomeEnhancementActive =
-                        VirtualDisplayHomeSupport.shouldUseEnhancedHomeLaunch(
-                                true, result.homeSupportRequested,
-                                result.primaryHomeHookActive);
-            } else {
-                failures = result.failure;
-            }
+        }
+        if (result.isSuccess()) {
+            rootManagedVirtualDisplay = true;
+            displayId = result.displayId;
+            selectedFlags = result.selectedFlags;
+            homeSupportRequested = result.homeSupportRequested;
+            homeSupportFailure = result.homeSupportFailure;
+            primaryHomeEnhancementActive =
+                    VirtualDisplayHomeSupport.shouldUseEnhancedHomeLaunch(
+                            true, result.homeSupportRequested,
+                            result.primaryHomeHookActive);
+//                ShizukuServiceUtil.bindShizukuMouseMonitorUserServiceByDisplayId(displayId, spec.width, spec.height);
         } else {
-            StringBuilder directFailures = new StringBuilder();
-            for (int flags : flagCandidates) {
-                VirtualDisplay candidate = null;
-                try {
-                    VirtualDisplayHomeSupport.CreationResult creation =
-                            VirtualDisplayHomeSupport.create(
-                                    displayManager, displayName,
-                                    spec.width, spec.height, spec.densityDpi,
-                                    holder.getSurface(), flags);
-                    candidate = creation.display;
-                    homeSupportRequested = creation.homeSupportRequested;
-                    homeSupportFailure = creation.homeSupportFailure;
-                    primaryHomeEnhancementActive =
-                            VirtualDisplayHomeSupport.shouldUseEnhancedHomeLaunch(
-                                    true, creation.homeSupportRequested,
-                                    creation.primaryHomeHookActive);
-                    Display candidateDisplay = candidate == null
-                            ? null : candidate.getDisplay();
-                    if (candidateDisplay != null) {
-                        virtualDisplay = candidate;
-                        displayId = candidateDisplay.getDisplayId();
-                        selectedFlags = flags;
-                        Log.i(TAG, "Create virtual display ok for slot " + slot
-                                + " with flags=" + flags);
-                        break;
-                    }
-                } catch (RuntimeException e) {
-                    if (directFailures.length() > 0) {
-                        directFailures.append("; ");
-                    }
-                    directFailures.append("flags=").append(flags).append(":")
-                            .append(e.getClass().getSimpleName());
-                } finally {
-                    if (candidate != null && candidate != virtualDisplay) {
-                        discardVirtualDisplayCandidate(candidate, flags);
-                    }
-                }
-            }
-            failures = directFailures.toString();
+            failures = result.failure;
         }
         Display hostedDisplay = waitForHostedDisplay(displayId);
         if (!hasVirtualDisplay() || hostedDisplay == null) {
@@ -3376,9 +3298,65 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         }
     }
 
+
+    private String buildRootInputBridgeToken() {
+        try {
+            PackageInfo packageInfo = packageManager.getPackageInfo(owner.getPackageName(), 0);
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? packageInfo.getLongVersionCode()
+                    : packageInfo.versionCode;
+            ApplicationInfo applicationInfo = owner.getApplicationInfo();
+            return versionCode + ":" + packageInfo.lastUpdateTime + ":"
+                    + applicationInfo.sourceDir;
+        } catch (PackageManager.NameNotFoundException | RuntimeException e) {
+            return "unknown";
+        }
+    }
+
+    private String getRootInputBridgeToken() {
+        String token = cachedRootInputBridgeToken;
+        if (token != null) {
+            return token;
+        }
+        synchronized (rootInputBridgeStartLock) {
+            if (cachedRootInputBridgeToken == null) {
+                cachedRootInputBridgeToken = buildRootInputBridgeToken();
+            }
+            return cachedRootInputBridgeToken;
+        }
+    }
+
+    private void registerCrossAppLaunchRouting(String bridgeToken) {
+        if (!rootVirtualDisplayBridgeClient.registerCrossAppLaunchCallback(
+                bridgeToken,
+                callbacks::onCrossAppLaunch,
+                callbacks::onSystemTaskEvent)) {
+            Log.w(TAG, "Cross-app launch routing callback unavailable for slot " + slot);
+        }
+    }
+
+    private boolean startRootInputBridgeIfNeeded(boolean force) {
+        return startRootInputBridgeIfNeeded(force, true);
+    }
+
+    private boolean startRootInputBridgeIfNeeded(boolean force, boolean requireRoot) {
+        synchronized (rootInputBridgeStartLock) {
+            if (!force) {
+                registerCrossAppLaunchRouting(getRootInputBridgeToken());
+                return true;
+            }
+            callbacks.setRootInputBridgeLastStartUptime(SystemClock.uptimeMillis());
+            return restartRootInputBridge();
+        }
+    }
+
+    private boolean restartRootInputBridge() {
+        registerCrossAppLaunchRouting(getRootInputBridgeToken());
+        return true;
+    }
+
     private void ensureTrustedDisplayRole() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-                || !rootAvailable
                 || owner.checkSelfPermission(ADD_TRUSTED_DISPLAY_PERMISSION)
                 == PackageManager.PERMISSION_GRANTED) {
             return;
@@ -3854,7 +3832,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 // caller remains OneStep. This both selects the exact app instance and
                 // lets Android validate/grant the source URI against OneStep's UID.
                 owner.startActivity(displayIntent, options.toBundle());
-            } else if (rootAvailable) {
+            } else {
                 boolean rootStarted = rootVirtualDisplayBridgeClient.startActivityAsUser(
                         getRootInputBridgeToken(), displayIntent,
                         android.os.Process.myUserHandle().hashCode(),
@@ -3862,8 +3840,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 if (!rootStarted) {
                     return false;
                 }
-            } else {
-                return false;
             }
             Log.i(TAG, "ActivityOptions start ok: " + app.packageName
                     + " user=" + app.userId()
@@ -3937,11 +3913,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     }
 
     private void runPrivilegedCommandAsync(String command, String description) {
-        if (rootAvailable) {
-            runRootCommandAsync(command, description);
-        } else {
-            Log.w(TAG, "Skip privileged command without su: " + description);
-        }
+        runRootCommandAsync(command, description);
     }
 
     void ensureRootInputBridgeStarted() {
@@ -3955,7 +3927,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
      */
     void onRootAuthorizationGranted() {
         cachedSuCommandAvailable = true;
-        rootAvailable = true;
         unavailableReason = "";
         ensureRootInputBridgeStarted();
         if (hasVirtualDisplay()) {
@@ -3970,10 +3941,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     }
 
     private void ensureRootInputBridgeStarted(boolean force, boolean synchronous) {
-        if (!rootAvailable) {
-            Log.w(TAG, "Direct input bridge unavailable: root is not available");
-            return;
-        }
         if (synchronous) {
             startRootInputBridgeIfNeeded(force);
             return;
@@ -3984,97 +3951,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
             Log.w(TAG, "Queue direct input bridge start failed: "
                     + e.getClass().getSimpleName());
         }
-    }
-
-    private boolean startRootInputBridgeIfNeeded(boolean force) {
-        return startRootInputBridgeIfNeeded(force, true);
-    }
-
-    private boolean startRootInputBridgeIfNeeded(boolean force, boolean requireRoot) {
-        synchronized (rootInputBridgeStartLock) {
-            String bridgeToken = getRootInputBridgeToken();
-            Integer currentBridgeUid =
-                    rootInputBridgeClient.getCurrentBridgeUid(bridgeToken);
-            Integer displayBridgeUid = currentBridgeUid != null
-                    ? rootVirtualDisplayBridgeClient.getBridgeUid(bridgeToken) : null;
-            boolean bridgeReady = currentBridgeUid != null
-                    && displayBridgeUid != null
-                    && (!requireRoot || (currentBridgeUid == 0 && displayBridgeUid == 0));
-            if (bridgeReady) {
-                if (!force) {
-                    registerCrossAppLaunchRouting(bridgeToken);
-                    return true;
-                }
-                Log.w(TAG, "Restart direct input bridge after operation failure: uid="
-                        + currentBridgeUid);
-                callbacks.setRootInputBridgeLastStartUptime(SystemClock.uptimeMillis());
-                return restartRootInputBridge(bridgeToken);
-            }
-            if (currentBridgeUid != null) {
-                Log.w(TAG, "Replace bridge without root display service: inputUid="
-                        + currentBridgeUid + ", displayUid=" + displayBridgeUid);
-            }
-            long now = SystemClock.uptimeMillis();
-            long lastStartUptime = callbacks.rootInputBridgeLastStartUptime();
-            if (!force && lastStartUptime > 0L
-                    && now - lastStartUptime
-                    < ROOT_INPUT_BRIDGE_START_THROTTLE_MS) {
-                return false;
-            }
-            callbacks.setRootInputBridgeLastStartUptime(now);
-            return restartRootInputBridge(bridgeToken);
-        }
-    }
-
-    private boolean restartRootInputBridge(String bridgeToken) {
-        String apkPath = owner.getApplicationInfo().sourceDir;
-        int uid = android.os.Process.myUid();
-        String quotedBridgeToken = shellQuote(bridgeToken);
-        rootInputBridgeClient.close();
-        String cleanupCommand = "for p in $(pidof app_process64 app_process 2>/dev/null); do "
-                + "cmdline=$(tr '\\0' ' ' < /proc/$p/cmdline 2>/dev/null); "
-                + "case \"$cmdline\" in *" + ROOT_INPUT_BRIDGE_CLASS
-                + "*) kill $p 2>/dev/null;; esac; done; ";
-        String bridgeCommand = "runtime=/system/bin/app_process64; "
-                + "[ -x \"$runtime\" ] || runtime=/system/bin/app_process; "
-                + "CLASSPATH=" + shellQuote(apkPath)
-                + " \"$runtime\" /system/bin "
-                + ROOT_INPUT_BRIDGE_CLASS + " " + uid + " " + quotedBridgeToken
-                + " </dev/null >/dev/null 2>&1 &";
-        rootInputBridgeClient.close();
-        rootVirtualDisplayBridgeClient.close();
-        String policyCommand = "";
-        if (RootBridgePolicyCompat.shouldApplyLivePolicy(Build.VERSION.SDK_INT)) {
-            policyCommand = "if command -v magiskpolicy >/dev/null 2>&1; then "
-                    + "root_context=$(id -Z 2>/dev/null); "
-                    + "root_domain=${root_context#u:r:}; root_domain=${root_domain%%:*}; "
-                    + "case \"$root_domain\" in ''|*[!a-zA-Z0-9_]*) ;; *) "
-                    + "magiskpolicy --live "
-                    + "\"allow $root_domain default_android_service service_manager add\" "
-                    + shellQuote("allow priv_app default_android_service service_manager find")
-                    + " "
-                    + "\"allow priv_app $root_domain binder { call transfer }\" "
-                    + "\"allow $root_domain priv_app binder { call transfer }\" "
-                    + "\"allow priv_app $root_domain unix_stream_socket connectto\" "
-                    + "\"allow $root_domain priv_app fd use\" "
-                    + "\"allow $root_domain surfaceflinger_service service_manager find\" "
-                    + "\"allow $root_domain surfaceflinger binder { call transfer }\" "
-                    + "\"allow surfaceflinger $root_domain binder transfer\" "
-                    + ">/dev/null 2>&1 || true; esac; fi; ";
-        }
-        ShellCommandResult rootResult = runRootCommand(
-                cleanupCommand + policyCommand + bridgeCommand);
-        if (waitForRootInputBridge(bridgeToken)) {
-            registerCrossAppLaunchRouting(bridgeToken);
-            Log.i(TAG, "Root display bridge ready: uid=0, launcherExit="
-                    + rootResult.exitCode);
-            return true;
-        }
-        Log.w(TAG, "Root display bridge did not become ready: rootExit="
-                + rootResult.exitCode
-                + ", rootOutput=" + rootResult.output);
-        showRootAuthorizationHintIfContentUnavailable();
-        return false;
     }
 
     private void showRootAuthorizationHintIfContentUnavailable() {
@@ -4092,14 +3968,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         });
     }
 
-    private void registerCrossAppLaunchRouting(String bridgeToken) {
-        if (!rootVirtualDisplayBridgeClient.registerCrossAppLaunchCallback(
-                bridgeToken, callbacks::onCrossAppLaunch,
-                callbacks::onSystemTaskEvent)) {
-            Log.w(TAG, "Cross-app launch routing callback unavailable for slot " + slot);
-        }
-    }
-
     void syncLaunchRoutingSource() {
         boolean active = slot == callbacks.activeMainSlot()
                 && displayId > DEFAULT_DISPLAY_ID
@@ -4111,30 +3979,9 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 packageName, active);
     }
 
-    private boolean waitForRootInputBridge(String bridgeToken) {
-        long deadline = SystemClock.uptimeMillis() + ROOT_INPUT_BRIDGE_READY_TIMEOUT_MS;
-        do {
-            Integer inputUid = rootInputBridgeClient.getCurrentBridgeUid(bridgeToken);
-            Integer displayUid = rootVirtualDisplayBridgeClient.getBridgeUid(bridgeToken);
-            if (inputUid != null && inputUid == 0
-                    && displayUid != null && displayUid == 0) {
-                return true;
-            }
-            long remainingMs = deadline - SystemClock.uptimeMillis();
-            if (remainingMs <= 0L) {
-                return false;
-            }
-            SystemClock.sleep(Math.min(ROOT_INPUT_BRIDGE_READY_RETRY_MS, remainingMs));
-        } while (true);
-    }
-
     private void runStartCommandAsync(String command, int startEpoch, String description) {
-        if (rootAvailable) {
-            runRootCommandAsync(buildGuardedStartCommand(command, startEpoch), description,
-                    startEpoch);
-        } else {
-            Log.w(TAG, "Skip display start without su: " + description);
-        }
+        runRootCommandAsync(buildGuardedStartCommand(command, startEpoch), description,
+                startEpoch);
     }
 
     private String buildGuardedStartCommand(String command, int startEpoch) {
@@ -4146,55 +3993,24 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 + "\" ]; then echo stale embedded start; exit 73; fi; " + command;
     }
 
-    private String buildRootInputBridgeToken() {
-        try {
-            PackageInfo packageInfo = packageManager.getPackageInfo(owner.getPackageName(), 0);
-            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                    ? packageInfo.getLongVersionCode()
-                    : packageInfo.versionCode;
-            ApplicationInfo applicationInfo = owner.getApplicationInfo();
-            return versionCode + ":" + packageInfo.lastUpdateTime + ":"
-                    + applicationInfo.sourceDir;
-        } catch (PackageManager.NameNotFoundException | RuntimeException e) {
-            return "unknown";
-        }
-    }
-
-    private String getRootInputBridgeToken() {
-        String token = cachedRootInputBridgeToken;
-        if (token != null) {
-            return token;
-        }
-        synchronized (rootInputBridgeStartLock) {
-            if (cachedRootInputBridgeToken == null) {
-                cachedRootInputBridgeToken = buildRootInputBridgeToken();
-            }
-            return cachedRootInputBridgeToken;
-        }
-    }
-
     private ShellCommandResult runPrivilegedCommand(String command, String description) {
         return runPrivilegedCommand(command, description, true);
     }
 
     private ShellCommandResult runPrivilegedCommand(String command, String description,
                                                    boolean logOutput) {
-        if (rootAvailable) {
-            long startedAt = System.currentTimeMillis();
-            ShellCommandResult result = runRootCommand(command);
-            long elapsedMs = System.currentTimeMillis() - startedAt;
-            if (result.exitCode == 0) {
-                Log.i(TAG, "Root command ok(" + elapsedMs + "ms): "
-                        + description + formatCommandLogOutput(result.output, logOutput));
-            } else {
-                Log.w(TAG, "Root command failed(" + result.exitCode + ", "
-                        + elapsedMs + "ms): "
-                        + description + formatCommandLogOutput(result.output, logOutput));
-            }
-            return result;
+        long startedAt = System.currentTimeMillis();
+        ShellCommandResult result = runRootCommand(command);
+        long elapsedMs = System.currentTimeMillis() - startedAt;
+        if (result.exitCode == 0) {
+            Log.i(TAG, "Root command ok(" + elapsedMs + "ms): "
+                    + description + formatCommandLogOutput(result.output, logOutput));
+        } else {
+            Log.w(TAG, "Root command failed(" + result.exitCode + ", "
+                    + elapsedMs + "ms): "
+                    + description + formatCommandLogOutput(result.output, logOutput));
         }
-        Log.w(TAG, "Privileged command unavailable without su: " + description);
-        return new ShellCommandResult(-1, "su unavailable");
+        return result;
     }
 
     private void runRootCommandAsync(String command, String description) {
@@ -4327,7 +4143,8 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     }
 
     boolean hasRootAccess() {
-        return rootAvailable;
+        IRootInputBridgeService rootInputBridgeService = ShizukuServiceUtil.getRootInputBridgeService();
+        return rootInputBridgeService != null;
     }
     private static long toWallTimeMillis(long uptimeMillis) {
         long nowWallTime = System.currentTimeMillis();

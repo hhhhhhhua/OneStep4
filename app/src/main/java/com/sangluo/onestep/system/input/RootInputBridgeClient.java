@@ -3,15 +3,18 @@ package com.sangluo.onestep.system.input;
 import android.graphics.Rect;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
+import android.os.RemoteException;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
 import android.content.ComponentName;
 import android.view.MotionEvent;
 
+import com.sangluo.onestep.IRootInputBridgeService;
 import com.sangluo.onestep.MotionEventCodec;
-import com.sangluo.onestep.RootInputBridge;
 import com.sangluo.onestep.model.PinnedTaskState;
+import com.sangluo.onestep.shizuku.RootInputBridgeService;
+import com.sangluo.onestep.utils.ShizukuServiceUtil;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -25,7 +28,7 @@ import java.util.Locale;
 public final class RootInputBridgeClient implements AutoCloseable {
     private static final String TAG = "OneStep40";
     private static final String SOCKET_PREFIX = "onestep_input_bridge_";
-    private static final String HELLO_PREFIX = RootInputBridge.HELLO_RESPONSE_PREFIX;
+    private static final String HELLO_PREFIX = RootInputBridgeService.HELLO_RESPONSE_PREFIX;
     private static final int CONNECT_LOG_THROTTLE_MS = 2000;
     private static final int HANDSHAKE_TIMEOUT_MS = 250;
     private static final int POLICY_TIMEOUT_MS = 800;
@@ -219,30 +222,6 @@ public final class RootInputBridgeClient implements AutoCloseable {
                 sendRequestOnDedicatedConnection(bridgeToken, command), "pipUndock", taskId);
     }
 
-    public boolean isCurrentBridgeAvailable(String bridgeToken) {
-        return getCurrentBridgeUid(bridgeToken) != null;
-    }
-
-    public Integer getCurrentBridgeUid(String bridgeToken) {
-        LocalSocket probeSocket = null;
-        BufferedWriter probeWriter = null;
-        BufferedReader probeReader = null;
-        try {
-            probeSocket = openSocket(HANDSHAKE_TIMEOUT_MS);
-            probeWriter = new BufferedWriter(new OutputStreamWriter(probeSocket.getOutputStream()));
-            probeReader = new BufferedReader(new InputStreamReader(probeSocket.getInputStream()));
-            writeLine(probeWriter, buildHelloCommand(bridgeToken));
-            return parseExpectedBridgeUid(bridgeToken, probeReader.readLine());
-        } catch (IOException | RuntimeException e) {
-            logFailure("probe failed", e);
-            return null;
-        } finally {
-            closeQuietly(probeReader);
-            closeQuietly(probeWriter);
-            closeQuietly(probeSocket);
-        }
-    }
-
     @Override
     public synchronized void close() {
         closeConnection();
@@ -264,81 +243,20 @@ public final class RootInputBridgeClient implements AutoCloseable {
     }
 
     private boolean sendLine(String bridgeToken, String line) {
-        if (!ensureConnected(bridgeToken)) {
-            return false;
-        }
-        try {
-            writeLine(writer, line);
-            return true;
-        } catch (IOException | RuntimeException e) {
-            logFailure("write failed", e);
-            closeConnection();
-            return false;
-        }
+        sendRequestOnDedicatedConnection(bridgeToken, line);
+        return true;
+    }
+
+    private static IRootInputBridgeService getRootInputBridgeService() {
+        IRootInputBridgeService mRootInputBridgeService = ShizukuServiceUtil.getRootInputBridgeService();
+        return mRootInputBridgeService;
     }
 
     private String sendRequestOnDedicatedConnection(String bridgeToken, String line) {
-        LocalSocket requestSocket = null;
-        BufferedReader requestReader = null;
-        BufferedWriter requestWriter = null;
         try {
-            requestSocket = openSocket(POLICY_TIMEOUT_MS);
-            requestReader = new BufferedReader(
-                    new InputStreamReader(requestSocket.getInputStream()));
-            requestWriter = new BufferedWriter(
-                    new OutputStreamWriter(requestSocket.getOutputStream()));
-            writeLine(requestWriter, buildHelloCommand(bridgeToken));
-            String helloResponse = requestReader.readLine();
-            if (!isExpectedHelloResponse(bridgeToken, helloResponse)) {
-                throw new IOException("version mismatch " + helloResponse);
-            }
-            writeLine(requestWriter, line);
-            String response = requestReader.readLine();
-            if (response == null) {
-                throw new IOException("bridge closed before response");
-            }
-            return response;
-        } catch (IOException | RuntimeException e) {
-            logFailure("bridge request failed", e);
-            return null;
-        } finally {
-            closeQuietly(requestReader);
-            closeQuietly(requestWriter);
-            closeQuietly(requestSocket);
-        }
-    }
-
-    private boolean ensureConnected(String bridgeToken) {
-        if (socket != null && socket.isConnected() && writer != null
-                && TextUtils.equals(bridgeToken, connectedBridgeToken)) {
-            return true;
-        }
-        closeConnection();
-        try {
-            LocalSocket newSocket = openSocket(HANDSHAKE_TIMEOUT_MS);
-            BufferedReader newReader = new BufferedReader(
-                    new InputStreamReader(newSocket.getInputStream()));
-            BufferedWriter newWriter = new BufferedWriter(
-                    new OutputStreamWriter(newSocket.getOutputStream()));
-            writeLine(newWriter, buildHelloCommand(bridgeToken));
-            String response = newReader.readLine();
-            if (!isExpectedHelloResponse(bridgeToken, response)) {
-                closeQuietly(newReader);
-                closeQuietly(newWriter);
-                closeQuietly(newSocket);
-                logFailure("version mismatch", new IOException(String.valueOf(response)));
-                return false;
-            }
-            newSocket.setSoTimeout(0);
-            socket = newSocket;
-            reader = newReader;
-            writer = newWriter;
-            connectedBridgeToken = bridgeToken;
-            return true;
-        } catch (IOException | RuntimeException e) {
-            logFailure("connect failed", e);
-            closeConnection();
-            return false;
+            return getRootInputBridgeService().handleCommand(bridgeToken, line);
+        } catch (RemoteException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -359,22 +277,6 @@ public final class RootInputBridgeClient implements AutoCloseable {
         target.write(line);
         target.write('\n');
         target.flush();
-    }
-
-    private static String buildHelloCommand(String bridgeToken) {
-        return "hello " + bridgeToken;
-    }
-
-    private static boolean isExpectedHelloResponse(String bridgeToken, String response) {
-        return parseExpectedBridgeUid(bridgeToken, response) != null;
-    }
-
-    private static Integer parseExpectedBridgeUid(String bridgeToken, String response) {
-        String prefix = HELLO_PREFIX + " " + bridgeToken + " ";
-        if (TextUtils.equals(prefix + "2000", response)) {
-            return 2000;
-        }
-        return TextUtils.equals(prefix + "0", response) ? 0 : null;
     }
 
     private void logFailure(String stage, Exception e) {

@@ -1,0 +1,10 @@
+{
+
+  "runtime": "qjs",
+  "interaction": {
+    "type": "script",
+    "path": "/data/user/0/com.sangluo.onestepc16/files/frida/hook_one_step.js",
+    "on_change": "reload"
+  },
+  "teardown": "minimal"
+}

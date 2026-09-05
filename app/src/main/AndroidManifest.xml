@@ -16,6 +16,9 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <uses-permission android:name="com.autonavi.minimap.permission.NAVIGATION_SERVICE" />
+    <uses-permission android:name="android.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY" tools:ignore="ProtectedPermissions"/>
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <queries>
         <package android:name="com.autonavi.minimap" />
         <package android:name="me.weishu.kernelsu" />
@@ -125,6 +128,13 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/drag_file_paths" />
         </provider>
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <service
             android:name=".feature.drag.ImageDragBridgeService"

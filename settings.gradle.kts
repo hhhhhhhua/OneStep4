@@ -33,3 +33,4 @@ dependencyResolutionManagement {
 rootProject.name = "OneStep4.0"
 include(":app")
 include(":xposed-api-stubs")
+include(":hidden-stub")

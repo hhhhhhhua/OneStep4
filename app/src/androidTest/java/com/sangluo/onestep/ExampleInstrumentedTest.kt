@@ -1,12 +1,11 @@
 package com.sangluo.onestep
 
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
-
+import androidx.test.platform.app.InstrumentationRegistry
+import com.sangluo.onestep.shizuku.RootInputBridgeService
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
-
-import org.junit.Assert.*
 
 /**
  * Instrumented test, which will execute on an Android device.
@@ -20,5 +19,12 @@ class ExampleInstrumentedTest {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals("com.sangluo.onestep", appContext.packageName)
+    }
+
+
+    @Test
+    fun tget() {
+        val service = RootInputBridgeService()
+        println("service = $service")
     }
 }
