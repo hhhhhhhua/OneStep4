@@ -15,6 +15,12 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
+import com.sangluo.onestep.MainActivity;
+import com.sangluo.onestep.RootVirtualDisplayHost;
+import com.sangluo.onestep.system.input.RootInputBridgeClient;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.BooleanSupplier;
 
 /** Applies system bars and owns the tiny default-display key-focus anchor. */
@@ -30,6 +36,10 @@ public final class SystemUiController implements AutoCloseable {
     private Object defaultDisplayBackCallback;
     private Boolean appliedHideStatusBar;
     private Boolean appliedSystemAppInstall;
+    private final RootInputBridgeClient rootInputBridgeClient =
+            new RootInputBridgeClient();
+    private final ExecutorService inputDispatchExecutor =
+            Executors.newSingleThreadExecutor();
 
     public SystemUiController(Activity activity,
                               BooleanSupplier hideStatusBar, BooleanSupplier destroyed,
@@ -107,6 +117,7 @@ public final class SystemUiController implements AutoCloseable {
             return;
         }
         try {
+            MainActivity mainActivity = (MainActivity)activity;
             Dialog focusWindow = new Dialog(
                     activity, android.R.style.Theme_Translucent_NoTitleBar);
             focusWindow.setCancelable(false);
@@ -117,6 +128,8 @@ public final class SystemUiController implements AutoCloseable {
                     }
                     return true;
                 }
+/*                RootVirtualDisplayHost currentHost = (RootVirtualDisplayHost) MainActivity.embeddedHosts[mainActivity.activeMainSlot];
+                currentHost.sendKeyboardEvent(event);*/
                 return false;
             });
             FrameLayout content = new FrameLayout(focusWindow.getContext());

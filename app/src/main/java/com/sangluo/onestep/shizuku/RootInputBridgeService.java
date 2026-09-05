@@ -5,6 +5,7 @@ import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.graphics.Rect;
+import android.hardware.input.IInputManager;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.RemoteException;
@@ -23,8 +24,12 @@ import com.sangluo.onestep.MotionEventCodec;
 import com.sangluo.onestep.RootActivityManagerCompat;
 import com.sangluo.onestep.RootVirtualDisplayBridge;
 import com.sangluo.onestep.feature.embedding.HostedBackDispatchPolicy;
+import com.sangluo.onestep.frida.FridaBridge;
 import com.sangluo.onestep.system.root.ShellCommandResult;
 import com.sangluo.onestep.system.root.SystemServiceFailurePolicy;
+import com.sangluo.onestep.utils.DeviceUtil;
+import com.sangluo.onestep.utils.ExtDisplayUtil;
+import com.sangluo.onestep.utils.SysServiceObjUtil;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -35,6 +40,7 @@ import java.io.OutputStreamWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
@@ -146,7 +152,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
         injectInputEventMethod.setAccessible(true);
         RootVirtualDisplayBridge.publish(systemContext);
         // Service 启动时，开启一个定时任务，每 3 秒检查一次宿主 App 是否还活着
-        scheduler.scheduleWithFixedDelay(new Runnable() {
+        /*scheduler.scheduleWithFixedDelay(new Runnable() {
             @Override
             public void run() {
                 if (!isAppProcessAlive("com.sangluo.onestepc16")) {
@@ -157,7 +163,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
                 }
 //                Log.e(TAG, "app存活");
             }
-        }, 0, 1, TimeUnit.SECONDS);
+        }, 0, 1, TimeUnit.SECONDS);*/
         Log.i(TAG, "input injection backend=" + inputManager.getClass().getName());
     }
 
@@ -250,6 +256,10 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
             } else if ("motion".equals(parts[0])
                     && (parts.length == 7 || parts.length == 15 || parts.length == 16)) {
                 injectMotion(parts);
+            } else if ("KeyEvent".equals(parts[0])) {
+                int displayId = Integer.parseInt(parts[1]);
+                KeyEvent event = MotionEventCodec.decode(parts[3], KeyEvent.CREATOR);
+                injectKeyEvent(event, displayId);
             } else if ("focusHostedDisplay".equals(parts[0]) && parts.length == 2) {
                 return focusHostedDisplay(parts);
             } else if ("removeTask".equals(parts[0]) && parts.length == 2) {
@@ -1104,6 +1114,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
                 + " localImePolicy=" + localImePolicy
                 + " success=" + focused
                 + (failure.isEmpty() ? "" : " failure=" + failure));
+        DeviceUtil.bindDeviceToVirtualDisplay(SysServiceObjUtil.getInputManagerByShizukuService(), 1, displayId);
         return "focusHostedDisplay " + displayId + " "
                 + localImePolicy + " " + focused;
     }
@@ -1190,7 +1201,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
     private void injectMotionEvent(String[] parts) throws ReflectiveOperationException {
         int displayId = Integer.parseInt(parts[1]);
         long traceId = Long.parseLong(parts[2]);
-        MotionEvent event = MotionEventCodec.decode(parts[3]);
+        MotionEvent event = MotionEventCodec.decode(parts[3], MotionEvent.CREATOR);
         int actionMasked = event.getActionMasked();
         int pointerIndex = Math.min(event.getActionIndex(), event.getPointerCount() - 1);
         float x = event.getX(pointerIndex);

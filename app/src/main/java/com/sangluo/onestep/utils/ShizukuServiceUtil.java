@@ -2,6 +2,7 @@ package com.sangluo.onestep.utils;
 
 import android.content.ComponentName;
 import android.content.ServiceConnection;
+import android.hardware.input.InputManager;
 import android.os.Binder;
 import android.os.IBinder;
 import android.os.RemoteException;
@@ -13,12 +14,14 @@ import com.sangluo.onestep.IMouseMonitorService;
 import com.sangluo.onestep.IRootInputBridgeService;
 import com.sangluo.onestep.IShizukuCommonService;
 import com.sangluo.onestep.MainActivity;
+import com.sangluo.onestep.OneStepApplication;
 import com.sangluo.onestep.frida.FridaBridge;
 import com.sangluo.onestep.shizuku.MouseMonitorUserService;
 import com.sangluo.onestep.shizuku.RootInputBridgeService;
 import com.sangluo.onestep.shizuku.ShizukuCommonService;
 import com.sangluo.onestep.system.root.PersistentRootShell;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -36,21 +39,21 @@ public class ShizukuServiceUtil {
     private static Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
             new ComponentName("com.sangluo.onestepc16", MouseMonitorUserService.class.getName())
     )
-            .daemon(false)
+            .daemon(true)
             .processNameSuffix("mouse_monitor_single")
             .version(1);
     private static Shizuku.UserServiceArgs args2 = new Shizuku.UserServiceArgs(
             new ComponentName("com.sangluo.onestepc16", ShizukuCommonService.class.getName())
     )
-            .daemon(false)
+            .daemon(true)
             .processNameSuffix("common_single")
             .version(1);
     private static Shizuku.UserServiceArgs args3 = new Shizuku.UserServiceArgs(
             new ComponentName("com.sangluo.onestepc16", RootInputBridgeService.class.getName())
     )
-            .daemon(false)
+            .daemon(true)
             .processNameSuffix("root_input_bridge")
-            .version(1);
+            .version(3);
     private static ServiceConnection suCoon = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
@@ -124,7 +127,7 @@ public class ShizukuServiceUtil {
         // 绑定 UserService 参数
         Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
                 new ComponentName("com.sangluo.onestepc16", MouseMonitorUserService.class.getName()))
-                .daemon(false)
+                .daemon(true)
                 .processNameSuffix("mouse_monitor")
                 .version(1);
 
@@ -147,11 +150,12 @@ public class ShizukuServiceUtil {
                             }
                             mLastTriggerTime = currentTime;
 
-                            Integer hdmiDisplayId = FridaBridge.getHdmiDisplayIdBridge();
+                            Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(OneStepApplication.getContext());
                             if (hdmiDisplayId == null){
                                 hdmiDisplayId = 0;
                             }
-                            FridaBridge.startFixedPollingMonitorSyncBridge(hdmiDisplayId);
+//                            FridaBridge.startFixedPollingMonitorSyncBridge(hdmiDisplayId);
+                            DeviceUtil.bindDeviceToVirtualDisplay(SysServiceObjUtil.getInputManager(), 0, hdmiDisplayId);
 //                            float centerX = width / 2.0f;
 //                            float centerY = height / 2.0f;
 //

@@ -3,6 +3,7 @@ package com.sangluo.onestep.view;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.InputDevice;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
 
@@ -41,4 +42,21 @@ public class MouseSurfaceView extends SurfaceView {
 
         return super.dispatchGenericMotionEvent(event);
     }
+
+    /*@Override
+    public boolean onKeyPreIme(int keyCode, KeyEvent event) {
+        if (host != null) {
+            return host.sendKeyboardEvent(event);
+        }
+        return super.onKeyPreIme(keyCode, event);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (host != null) {
+            return host.sendKeyboardEvent(event);
+        }
+        return super.dispatchKeyEvent(event);
+    }*/
+
 }

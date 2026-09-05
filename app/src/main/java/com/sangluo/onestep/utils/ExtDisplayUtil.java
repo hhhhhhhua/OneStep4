@@ -1,5 +1,6 @@
 package com.sangluo.onestep.utils;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.hardware.display.DisplayManager;
 import android.os.Build;
@@ -8,6 +9,8 @@ import android.util.Log;
 import android.view.Display;
 
 import com.sangluo.onestep.OneStepApplication;
+
+import java.lang.reflect.Method;
 
 import rikka.shizuku.SystemServiceHelper;
 
@@ -47,13 +50,29 @@ public class ExtDisplayUtil {
      */
     public static final int TYPE_VIRTUAL = 5;
 
+    public static Display getDisplayObj(Context context, int displayId){
+        DisplayManager displayManager = (DisplayManager)context.getSystemService(Context.DISPLAY_SERVICE);
+        return displayManager.getDisplay(displayId);
+    }
+
+    public static String getDisplayUniqueId(Display display) {
+        try {
+            @SuppressLint("BlockedPrivateApi") Method method = Display.class.getDeclaredMethod("getUniqueId");
+            method.setAccessible(true);
+            return (String) method.invoke(display);
+        } catch (Exception e) {
+            Log.e(TAG, "getUniqueId failed", e);
+            return null;
+        }
+    }
+
     /**
      * 获取外接屏幕 DisplayId
      * @return
      */
-    public static Integer getHdmiDisplayId() {
+    public static Integer getHdmiDisplayId(Context context) {
         try{
-            DisplayManager displayManager = (DisplayManager) OneStepApplication.getContext().getSystemService(Context.DISPLAY_SERVICE);
+            DisplayManager displayManager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
             Display[] displays = displayManager.getDisplays();
             if (displays != null && displays.length > 0){
                 for (int i = 0; i < displays.length; i++) {

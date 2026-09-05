@@ -60,6 +60,8 @@ public final class OneStepApplication extends Application {
         if (userManager == null || userManager.isUserUnlocked()) {
             LauncherAppRepository.preloadLauncherApps(this);
         }
+
+        this.sInstance = this;
     }
 
     private void cpFridaJsToDataDir() throws IOException {

@@ -1,26 +1,56 @@
 package com.sangluo.onestep.utils;
 
+import android.content.Context;
+import android.hardware.display.DisplayManager;
+import android.hardware.input.IInputManager;
 import android.os.IBinder;
+import android.util.Log;
+import android.view.Display;
+
+import com.sangluo.onestep.OneStepApplication;
 
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
 import rikka.shizuku.ShizukuBinderWrapper;
 import rikka.shizuku.SystemServiceHelper;
 
 public class SysServiceObjUtil {
+    private static final String TAG = "OneStep4";
 
-    public static Object getInputManager() throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+    public static IInputManager getInputManager(){
 
-        IBinder systemService = SystemServiceHelper.getSystemService("input");
+        IInputManager inputManager =
+                IInputManager.Stub.asInterface(
+                        new ShizukuBinderWrapper(
+                                SystemServiceHelper.getSystemService("input")
+                        )
+                );
+        return inputManager;
+    }
 
-        if (systemService == null) {
+    public static IInputManager getInputManagerByShizukuService(){
+        Class<?> serviceManager =
+                null;
+        try {
+            serviceManager = Class.forName("android.os.ServiceManager");
+            Method getService =
+                    serviceManager.getMethod(
+                            "getService",
+                            String.class
+                    );
 
-            return null;
-
+            IBinder binder = (IBinder) getService.invoke(
+                    null,
+                    "input"
+            );
+            IInputManager inputManager =
+                    IInputManager.Stub.asInterface(binder);
+            return inputManager;
+        } catch (Exception ex) {
+            Log.e(TAG, "获取inputManager getInputManagerByShizukuService失败：", ex);
+            throw new RuntimeException(ex);
         }
-
-        return Class.forName("android.hardware.input.IInputManager$Stub").getMethod("asInterface", IBinder.class).invoke(null, new ShizukuBinderWrapper(systemService));
-
     }
 
     public static Object getInputManager2() throws Exception {
@@ -36,5 +66,23 @@ public class SysServiceObjUtil {
         return Class.forName("android.hardware.input.IInputManager$Stub")
                 .getMethod("asInterface", IBinder.class)
                 .invoke(null, systemService);
+    }
+
+    public static Context getCurrentContext() {
+        try {
+            Class<?> activityThread =
+                    Class.forName("android.app.ActivityThread");
+
+            Method currentApplication =
+                    activityThread.getDeclaredMethod("currentApplication");
+
+            currentApplication.setAccessible(true);
+
+            return (Context) currentApplication.invoke(null);
+
+        } catch (Throwable e) {
+            Log.e(TAG, "获取Context失败", e);
+            return null;
+        }
     }
 }

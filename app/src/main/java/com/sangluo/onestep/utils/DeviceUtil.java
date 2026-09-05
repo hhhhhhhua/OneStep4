@@ -1,9 +1,17 @@
 package com.sangluo.onestep.utils;
 
+import static android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC;
+import static android.view.InputDevice.KEYBOARD_TYPE_NON_ALPHABETIC;
+
+import android.hardware.input.IInputManager;
 import android.hardware.input.InputManager;
 import android.os.Binder;
+import android.os.IBinder;
+import android.os.RemoteException;
 import android.util.Log;
+import android.view.Display;
 import android.view.InputDevice;
+import android.view.KeyEvent;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -15,9 +23,112 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import rikka.shizuku.ShizukuBinderWrapper;
+import rikka.shizuku.SystemServiceHelper;
+
 public class DeviceUtil {
 
     private static final String TAG = "OneStep40";
+
+    public static void bindDeviceToVirtualDisplay(IInputManager inputManager, int type , int displayId){
+        List<InputDevice> keyboradDevices = getKeyboradDevices(inputManager);
+        List<InputDevice> mouseDevices = getMouseDevices(inputManager);
+        ArrayList<InputDevice> inputDevices = new ArrayList<>();
+        switch (type){
+            case 0: // 所有设备
+                inputDevices.addAll(keyboradDevices);
+                inputDevices.addAll(mouseDevices);
+                break;
+            case 1: // 键盘
+                inputDevices.addAll(keyboradDevices);
+                break;
+            case 2: // 鼠标
+                inputDevices.addAll(mouseDevices);
+                break;
+            default:
+        }
+        for (InputDevice inputDevice : inputDevices) {
+            try {
+                inputManager.removeUniqueIdAssociationByDescriptor(inputDevice.getDescriptor());
+                Display displayObj = ExtDisplayUtil.getDisplayObj(SysServiceObjUtil.getCurrentContext(), displayId);
+                inputManager.addUniqueIdAssociationByDescriptor(inputDevice.getDescriptor(), ExtDisplayUtil.getDisplayUniqueId(displayObj));
+                Log.d(TAG, "绑定设备：" + inputDevice.getName() + "到displayid: " + displayId + "成功");
+            } catch (RemoteException e) {
+                Log.d(TAG, "绑定设备：" + inputDevice + "到displayid: " + displayId + "失败");
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    public static List<InputDevice> getKeyboradDevices(IInputManager inputManager){
+        try{
+            List<InputDevice> list = new ArrayList<>();
+            try {
+                int[] inputDeviceIds = inputManager.getInputDeviceIds();
+                for (int inputDeviceId : inputDeviceIds) {
+                    InputDevice inputDevice = inputManager.getInputDevice(inputDeviceId);
+                    if (inputDevice.isExternal() && isKeyboardDevice(inputDevice)){
+//                        Log.d(TAG, "找到键盘：" + inputDevice.toString());
+                        list.add(inputDevice);
+                    }
+                }
+            } catch (RemoteException e) {
+                throw new RuntimeException(e);
+            }
+            return list;
+        }catch (Exception e){
+            Log.e(TAG, "getKeyboradDevices失败：", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static List<InputDevice> getMouseDevices(IInputManager inputManager){
+        List<InputDevice> list = new ArrayList<>();
+        try {
+            int[] inputDeviceIds = inputManager.getInputDeviceIds();
+            for (int inputDeviceId : inputDeviceIds) {
+                InputDevice inputDevice = inputManager.getInputDevice(inputDeviceId);
+                if (inputDevice.isExternal() && isMouseDevice(inputDevice)){
+//                    Log.d(TAG, "找到鼠标：" + inputDevice.toString());
+                    list.add(inputDevice);
+                }
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "getMouseDevices失败：", e);
+            throw new RuntimeException(e);
+        }
+        return list;
+    }
+
+    private static boolean isKeyboardDevice(InputDevice device) {
+        if (device == null) {
+            return false;
+        }
+
+        int sources = device.getSources();
+
+        boolean hasKeyboard =
+                (sources & InputDevice.SOURCE_KEYBOARD) != 0;
+
+        String name = device.getName();
+
+        return name != null && name.toLowerCase().contains("keyboard") && hasKeyboard;
+    }
+
+    private static boolean isMouseDevice(InputDevice device) {
+        if (device == null) {
+            return false;
+        }
+
+        int sources = device.getSources();
+
+        boolean hasMouse =
+                (sources & InputDevice.SOURCE_MOUSE) != 0;
+
+        String name = device.getName();
+
+        return name != null && name.toLowerCase().contains("mouse") && hasMouse;
+    }
 
     public static void wakePointerHardware() {
         long token = Binder.clearCallingIdentity();

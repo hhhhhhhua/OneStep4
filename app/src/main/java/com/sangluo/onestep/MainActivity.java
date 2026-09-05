@@ -53,6 +53,7 @@ import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.InputDevice;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -116,6 +117,9 @@ import com.sangluo.onestep.ui.window.SideWindowInputShieldController;
 import com.sangluo.onestep.ui.window.WindowAnimationController;
 import com.sangluo.onestep.ui.window.WindowLayoutCalculator;
 import com.sangluo.onestep.ui.window.WindowLayoutModePolicy;
+import com.sangluo.onestep.utils.DeviceUtil;
+import com.sangluo.onestep.utils.ExtDisplayUtil;
+import com.sangluo.onestep.utils.SysServiceObjUtil;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -318,7 +322,7 @@ public class MainActivity extends Activity {
     private static final Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
             new ComponentName("com.sangluo.onestepc16", ShizukuKeyService.class.getName())
     )
-            .daemon(false)
+            .daemon(true)
             .processNameSuffix("key_filter")
             .version(1);
     private static final ServiceConnection mConnection = new ServiceConnection() {
@@ -358,12 +362,14 @@ public class MainActivity extends Activity {
                                 Log.d(TAG, "全局 KEY_F1 触发成功！释放设备绑定: ");
                                 int displayId = 0;
                                 if (focusFlag){
-                                    Integer hdmiDisplayIdBridge = FridaBridge.getHdmiDisplayIdBridge();
+                                    Integer hdmiDisplayIdBridge = ExtDisplayUtil.getHdmiDisplayId(that.getApplicationContext());
                                     displayId = hdmiDisplayIdBridge != null ? hdmiDisplayIdBridge : 0;
-                                    FridaBridge.startFixedPollingMonitorSyncBridge(displayId);
+//                                    FridaBridge.startFixedPollingMonitorSyncBridge(displayId);
+                                    DeviceUtil.bindDeviceToVirtualDisplay(SysServiceObjUtil.getInputManager(), 0, displayId);
                                 }else{
                                     displayId = ((RootVirtualDisplayHost) embeddedHosts[that.activeMainSlot]).getDisplayId();
-                                    FridaBridge.startFixedPollingMonitorSyncBridge(displayId);
+//                                    FridaBridge.startFixedPollingMonitorSyncBridge(displayId);
+                                    DeviceUtil.bindDeviceToVirtualDisplay(SysServiceObjUtil.getInputManager(), 0, displayId);
                                 }
                                 focusFlag = !focusFlag;
                             }else if (key_type.matches(".*KEY_[1-7].*DOWN.*") && !focusFlag) {
@@ -703,7 +709,7 @@ public class MainActivity extends Activity {
     private FrameLayout cornerTriggerPreviewLayer;
     private View leftCornerTriggerPreview;
     private View rightCornerTriggerPreview;
-    private volatile int activeMainSlot;
+    public volatile int activeMainSlot;
     private int firstMainSlot;
     private int secondMainSlot = -1;
     private boolean dualMainLayout;
@@ -993,6 +999,15 @@ public class MainActivity extends Activity {
                         " x=" + ev.getX() +
                         " y=" + ev.getY());*/
         return super.dispatchGenericMotionEvent(ev);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        Log.e(TAG + "KEY_TEST", "Activity dispatchKeyEvent: "
+                + event.getAction()
+                + " keyCode=" + event.getKeyCode());
+
+        return super.dispatchKeyEvent(event);
     }
 
     @Override

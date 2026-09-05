@@ -1,7 +1,9 @@
 package com.sangluo.onestep;
 
 import android.os.Parcel;
+import android.os.Parcelable;
 import android.util.Base64;
+import android.view.InputEvent;
 import android.view.MotionEvent;
 
 public final class MotionEventCodec {
@@ -11,7 +13,7 @@ public final class MotionEventCodec {
     private MotionEventCodec() {
     }
 
-    public static String encode(MotionEvent event) {
+    public static String encode(InputEvent event) {
         if (event == null) {
             throw new IllegalArgumentException("motion event is null");
         }
@@ -28,7 +30,8 @@ public final class MotionEventCodec {
         }
     }
 
-    public static MotionEvent decode(String encoded) {
+    public static <T extends Parcelable> T decode(String encoded,
+                                                  Parcelable.Creator<T> creator) {
         if (encoded == null || encoded.isEmpty()
                 || encoded.length() > MAX_ENCODED_EVENT_LENGTH) {
             throw new IllegalArgumentException("invalid encoded motion event length");
@@ -38,9 +41,8 @@ public final class MotionEventCodec {
         try {
             parcel.unmarshall(bytes, 0, bytes.length);
             parcel.setDataPosition(0);
-            MotionEvent event = MotionEvent.CREATOR.createFromParcel(parcel);
-            validate(event);
-            return event;
+//            validate(event);
+            return creator.createFromParcel(parcel);
         } finally {
             parcel.recycle();
         }

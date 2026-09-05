@@ -8,6 +8,7 @@ import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
 import android.content.ComponentName;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 
 import com.sangluo.onestep.IRootInputBridgeService;
@@ -43,6 +44,18 @@ public final class RootInputBridgeClient implements AutoCloseable {
                                            MotionEvent event, long traceId) {
         try {
             String command = "motionEvent " + displayId + " " + traceId + " "
+                    + MotionEventCodec.encode(event);
+            return sendLine(bridgeToken, command);
+        } catch (RuntimeException e) {
+            logFailure("encode motion failed", e);
+            return false;
+        }
+    }
+
+    public synchronized boolean sendKeyEvent(String bridgeToken, int displayId,
+                                             KeyEvent event, long traceId) {
+        try {
+            String command = "KeyEvent " + displayId + " " + traceId + " "
                     + MotionEventCodec.encode(event);
             return sendLine(bridgeToken, command);
         } catch (RuntimeException e) {

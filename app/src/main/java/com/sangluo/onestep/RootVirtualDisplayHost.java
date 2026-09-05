@@ -118,6 +118,7 @@ import com.sangluo.onestep.ui.window.OneStepWindowView;
 import com.sangluo.onestep.utils.DeviceUtil;
 import com.sangluo.onestep.utils.ExtDisplayUtil;
 import com.sangluo.onestep.utils.ShizukuServiceUtil;
+import com.sangluo.onestep.utils.SysServiceObjUtil;
 import com.sangluo.onestep.view.MouseSurfaceView;
 
 import java.lang.reflect.Method;
@@ -2137,12 +2138,44 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     private boolean startsInHiddenVirtualNavigationRegion(MotionEvent sourceEvent) {
         MotionEvent transformedEvent = obtainTransformedMotionEvent(sourceEvent);
         try {
-            return VirtualNavigationInputPolicy.startsInReservedBottomRegion(
+            /*return VirtualNavigationInputPolicy.startsInReservedBottomRegion(
                     transformedEvent.getY(), touchTargetDisplayHeight,
-                    virtualNavigationBarHeightPx);
+                    virtualNavigationBarHeightPx);*/
+            return false;
         } finally {
             transformedEvent.recycle();
         }
+    }
+
+    public boolean sendKeyboardEvent(KeyEvent event) {
+        if (event == null) {
+            return false;
+        }
+
+        Log.d(TAG, "KeyTrace host-received"
+                + " action=" + event.getAction()
+                + " keyCode=" + event.getKeyCode()
+                + " keyName=" + KeyEvent.keyCodeToString(event.getKeyCode())
+                + " deviceId=" + event.getDeviceId()
+                + " source=0x" + Integer.toHexString(event.getSource())
+                + " repeat=" + event.getRepeatCount()
+                + " flags=0x" + Integer.toHexString(event.getFlags()));
+
+        final int targetDisplayId = displayId;
+        final KeyEvent keyEvent = new KeyEvent(event);
+        final long traceId = activeTouchTraceId;
+
+        inputDispatchExecutor.execute(() -> {
+            try {
+                rootInputBridgeClient.sendKeyEvent(
+                        getRootInputBridgeToken(), targetDisplayId,
+                        keyEvent, traceId);
+            } catch (Exception e) {
+                Log.e(TAG, "KeyTrace send failed", e);
+            }
+        });
+
+        return true;
     }
 
     private boolean sendMotionThroughRootBridge(int targetDisplayId,
@@ -2335,9 +2368,10 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
             FridaBridge.startFixedPollingMonitorSyncBridge(this.getDisplayId());
         }*/
         if (isFirstRun){
-            Integer hdmiDisplayIdBridge = FridaBridge.getHdmiDisplayIdBridge();
+            Integer hdmiDisplayIdBridge = ExtDisplayUtil.getHdmiDisplayId(OneStepApplication.getContext());
             Integer hdmiDisplayId = hdmiDisplayIdBridge != null ? hdmiDisplayIdBridge : 0;
-            FridaBridge.startFixedPollingMonitorSyncBridge(hdmiDisplayId);
+//            FridaBridge.startFixedPollingMonitorSyncBridge(hdmiDisplayId);
+            DeviceUtil.bindDeviceToVirtualDisplay(SysServiceObjUtil.getInputManager(), 0, hdmiDisplayId);
             isFirstRun = false;
         }
     }

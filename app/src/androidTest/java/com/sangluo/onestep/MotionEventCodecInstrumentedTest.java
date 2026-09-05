@@ -32,7 +32,7 @@ public class MotionEventCodecInstrumentedTest {
                 properties, coordinates, 0, 0, 1f, 1f, 0, 0,
                 InputDevice.SOURCE_TOUCHSCREEN, 0);
 
-        MotionEvent decoded = MotionEventCodec.decode(MotionEventCodec.encode(source));
+        MotionEvent decoded = MotionEventCodec.decode(MotionEventCodec.encode(source), MotionEvent.CREATOR);
         try {
             assertEquals(MotionEvent.ACTION_POINTER_DOWN, decoded.getActionMasked());
             assertEquals(1, decoded.getActionIndex());
