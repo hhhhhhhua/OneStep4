@@ -4,6 +4,7 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 
 import com.sangluo.onestep.IRootInputBridgeService;
+import com.sangluo.onestep.IShizukuCommonService;
 import com.sangluo.onestep.utils.ShizukuServiceUtil;
 
 import java.io.BufferedReader;
@@ -23,7 +24,7 @@ public final class PersistentRootShell {
     }
 
     public ShellCommandResult run(String command, int timeoutSeconds) {
-        IRootInputBridgeService mRootInputBridgeService = ShizukuServiceUtil.getRootInputBridgeService();
+        IShizukuCommonService mRootInputBridgeService = ShizukuServiceUtil.getShizukuCommonService();
         try {
             return mRootInputBridgeService.run(command, timeoutSeconds);
         } catch (RemoteException e) {
@@ -32,7 +33,7 @@ public final class PersistentRootShell {
     }
 
     public boolean hasConfirmedRootAccess(){
-        IRootInputBridgeService mRootInputBridgeService = ShizukuServiceUtil.getRootInputBridgeService();
+        IShizukuCommonService mRootInputBridgeService = ShizukuServiceUtil.getShizukuCommonService();
         try {
             return mRootInputBridgeService.hasConfirmedRootAccess();
         } catch (RemoteException e) {

@@ -152,7 +152,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
         injectInputEventMethod.setAccessible(true);
         RootVirtualDisplayBridge.publish(systemContext);
         // Service 启动时，开启一个定时任务，每 3 秒检查一次宿主 App 是否还活着
-        /*scheduler.scheduleWithFixedDelay(new Runnable() {
+        scheduler.scheduleWithFixedDelay(new Runnable() {
             @Override
             public void run() {
                 if (!isAppProcessAlive("com.sangluo.onestepc16")) {
@@ -163,7 +163,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
                 }
 //                Log.e(TAG, "app存活");
             }
-        }, 0, 1, TimeUnit.SECONDS);*/
+        }, 0, 1, TimeUnit.SECONDS);
         Log.i(TAG, "input injection backend=" + inputManager.getClass().getName());
     }
 
@@ -1371,8 +1371,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
         return cause.getClass().getSimpleName() + ": " + message;
     }
 
-    @Override
-    public synchronized ShellCommandResult run(String command, int timeoutSeconds){
+    private synchronized ShellCommandResult run(String command, int timeoutSeconds){
         Log.d(TAG + "SHIZUKU_TEST",
                 "D: ShellCommandResult run |" + command + "| " + SystemClock.uptimeMillis());
         if (!ensureStarted()) {
@@ -1495,14 +1494,6 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
             }
         } catch (IOException ignored) {
         }
-    }
-
-    @Override
-    public synchronized boolean hasConfirmedRootAccess() {
-        if (rootAccessConfirmed && !isProcessRunning(process)) {
-            closeLocked();
-        }
-        return rootAccessConfirmed;
     }
 
     private void drainOutputLines() {

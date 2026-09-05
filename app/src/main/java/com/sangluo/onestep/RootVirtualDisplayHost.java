@@ -1282,6 +1282,8 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 return;
             }
         }
+        ShizukuServiceUtil.waitServiceInitOver();
+
         Set<String> packages = getRecordedSensorUidOverrides();
         for (String packageName : packages) {
             ShellCommandResult result = runPrivilegedCommand(
@@ -4062,9 +4064,9 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 && slot >= 0 && slot < MAX_WINDOWS
                 && windowApps[slot] != null;
         String packageName = active ? windowApps[slot].packageName : "";
-        rootVirtualDisplayBridgeClient.updateLaunchSource(
+        sensorPolicyExecutor.execute(() -> rootVirtualDisplayBridgeClient.updateLaunchSource(
                 getRootInputBridgeToken(), active ? displayId : DEFAULT_DISPLAY_ID,
-                packageName, active);
+                packageName, active));
     }
 
     private void runStartCommandAsync(String command, int startEpoch, String description) {
@@ -4231,7 +4233,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     }
 
     boolean hasRootAccess() {
-        IRootInputBridgeService rootInputBridgeService = ShizukuServiceUtil.getRootInputBridgeService();
+        IShizukuCommonService rootInputBridgeService = ShizukuServiceUtil.getShizukuCommonService();
         return rootInputBridgeService != null;
     }
     private static long toWallTimeMillis(long uptimeMillis) {

@@ -119,6 +119,7 @@ import com.sangluo.onestep.ui.window.WindowLayoutCalculator;
 import com.sangluo.onestep.ui.window.WindowLayoutModePolicy;
 import com.sangluo.onestep.utils.DeviceUtil;
 import com.sangluo.onestep.utils.ExtDisplayUtil;
+import com.sangluo.onestep.utils.ShizukuServiceUtil;
 import com.sangluo.onestep.utils.SysServiceObjUtil;
 
 import java.io.File;
@@ -322,7 +323,7 @@ public class MainActivity extends Activity {
     private static final Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
             new ComponentName("com.sangluo.onestepc16", ShizukuKeyService.class.getName())
     )
-            .daemon(true)
+            .daemon(false)
             .processNameSuffix("key_filter")
             .version(1);
     private static final ServiceConnection mConnection = new ServiceConnection() {
@@ -4834,7 +4835,13 @@ public class MainActivity extends Activity {
 
     private void requestDesktopHomeInMain() {
         desktopHomeRequestPending = true;
-        showDesktopHomeInMain();
+        mediaRootExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                ShizukuServiceUtil.waitServiceInitOver();
+                MainActivity.this.mainHandler.post(MainActivity.this::showDesktopHomeInMain);
+            }
+        });
     }
 
     private void stageDesktopHomeForMainPromotion(int slot) {

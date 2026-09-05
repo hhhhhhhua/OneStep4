@@ -39,21 +39,21 @@ public class ShizukuServiceUtil {
     private static Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
             new ComponentName("com.sangluo.onestepc16", MouseMonitorUserService.class.getName())
     )
-            .daemon(true)
+            .daemon(false)
             .processNameSuffix("mouse_monitor_single")
             .version(1);
     private static Shizuku.UserServiceArgs args2 = new Shizuku.UserServiceArgs(
             new ComponentName("com.sangluo.onestepc16", ShizukuCommonService.class.getName())
     )
-            .daemon(true)
+            .daemon(false)
             .processNameSuffix("common_single")
             .version(1);
     private static Shizuku.UserServiceArgs args3 = new Shizuku.UserServiceArgs(
             new ComponentName("com.sangluo.onestepc16", RootInputBridgeService.class.getName())
     )
-            .daemon(true)
+            .daemon(false)
             .processNameSuffix("root_input_bridge")
-            .version(3);
+            .version(1);
     private static ServiceConnection suCoon = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
@@ -127,7 +127,7 @@ public class ShizukuServiceUtil {
         // 绑定 UserService 参数
         Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
                 new ComponentName("com.sangluo.onestepc16", MouseMonitorUserService.class.getName()))
-                .daemon(true)
+                .daemon(false)
                 .processNameSuffix("mouse_monitor")
                 .version(1);
 
@@ -217,7 +217,28 @@ public class ShizukuServiceUtil {
         }
     }
 
+    public static IShizukuCommonService getShizukuCommonService() {
+        return mShizukuCommonService;
+    }
+
     public static IRootInputBridgeService getRootInputBridgeService() {
         return mRootInputBridgeService;
+    }
+
+    public static void waitServiceInitOver(){
+        int maxRetries = 20;
+        int retryIntervalMs = 500;
+
+        for (int i = 0; i < maxRetries; i++) {
+            if (ShizukuServiceUtil.getShizukuCommonService() != null) {
+                break;
+            }
+
+            try {
+                Thread.sleep(retryIntervalMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 }

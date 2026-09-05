@@ -180,7 +180,7 @@ public final class RootVirtualDisplayBridgeClient {
             return reply.readInt() != 0;
         } catch (RemoteException | RuntimeException e) {
             service = null;
-            Log.w(TAG, "Root display transaction failed: " + describe(e));
+            Log.e(TAG, "Root display transaction failed: ", e);
             return false;
         } finally {
             reply.recycle();
