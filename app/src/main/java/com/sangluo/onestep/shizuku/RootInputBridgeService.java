@@ -1207,7 +1207,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
         boolean accepted = false;
         try {
             getSetDisplayIdMethod().invoke(event, displayId);
-            event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+//            event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
             RootVirtualDisplayBridge.noteVirtualInput(displayId);
             Object result = injectInputEventMethod.invoke(inputManager, event, injectMode);
             accepted = !Boolean.FALSE.equals(result);

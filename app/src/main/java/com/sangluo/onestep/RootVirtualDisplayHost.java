@@ -118,6 +118,7 @@ import com.sangluo.onestep.ui.window.OneStepWindowView;
 import com.sangluo.onestep.utils.DeviceUtil;
 import com.sangluo.onestep.utils.ExtDisplayUtil;
 import com.sangluo.onestep.utils.ShizukuServiceUtil;
+import com.sangluo.onestep.view.MouseSurfaceView;
 
 import java.lang.reflect.Method;
 import java.io.File;
@@ -422,7 +423,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         displayManager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
         hostView = new FrameLayout(context);
         hostView.setClipChildren(true);
-        surfaceView = new SurfaceView(context);
+        surfaceView = new MouseSurfaceView(context, this);
         // Touch is injected into the hosted display directly.  The host SurfaceView must not
         // become the default-display IME target when the remote app focuses an editor.
         surfaceView.setFocusable(false);
@@ -440,6 +441,59 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         if (!bridgePrewarmOnly) {
             recoverStaleSensorServiceUidOverridesAsync();
         }
+    }
+
+    public boolean onMouseGenericMotionEvent(MotionEvent event) {
+        if (event == null) {
+            return false;
+        }
+
+        if ((event.getSource() & InputDevice.SOURCE_MOUSE)
+                != InputDevice.SOURCE_MOUSE) {
+            return false;
+        }
+
+        final int targetDisplayId = displayId;
+
+        // 不要修改原始 event，复制一份给异步队列
+        MotionEvent transformedEvent =
+                obtainTransformedMotionEvent(event);
+
+        final int actionMasked = transformedEvent.getActionMasked();
+
+        final long traceId = activeTouchTraceId;
+
+        /*Log.d(TAG,
+                "MouseTrace host-received"
+                        + " action=" + actionMasked
+                        + " display=" + targetDisplayId
+                        + " device=" + transformedEvent.getDeviceId()
+                        + " source=0x" + Integer.toHexString(
+                        transformedEvent.getSource())
+                        + " tool=" + transformedEvent.getToolType(0)
+                        + " buttons=" + transformedEvent.getButtonState()
+                        + " x=" + transformedEvent.getX()
+                        + " y=" + transformedEvent.getY()
+                        + " vscroll=" + transformedEvent.getAxisValue(
+                        MotionEvent.AXIS_VSCROLL)
+                        + " hscroll=" + transformedEvent.getAxisValue(
+                        MotionEvent.AXIS_HSCROLL));*/
+
+        boolean sent = sendMotionThroughRootBridge(
+                targetDisplayId,
+                transformedEvent,
+                traceId,
+                0       // 鼠标不要使用 touchFocusRequestGeneration
+        );
+
+        if (!sent) {
+            Log.w(TAG,
+                    "MouseTrace send failed display=" + targetDisplayId);
+            transformedEvent.recycle();
+            return false;
+        }
+
+        return true;
     }
 
     PinnedTaskState queryPinnedTaskState() {

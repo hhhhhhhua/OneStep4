@@ -488,7 +488,7 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams statusBarSpacingLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
         statusBarSpacingLp.topMargin = dp(12);
-        list.addView(statusBarSpacingItem, statusBarSpacingLp);
+//        list.addView(statusBarSpacingItem, statusBarSpacingLp);
 
         rootAuthorizationItem = createSettingsItem(
                 "ROOT 权限", "必需授权才可正常使用", "未授权");
@@ -497,7 +497,7 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams rootAuthorizationLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(88));
         rootAuthorizationLp.topMargin = dp(12);
-        list.addView(rootAuthorizationItem, rootAuthorizationLp);
+//        list.addView(rootAuthorizationItem, rootAuthorizationLp);
 
         LinearLayout zygiskHookStatusItem = createSettingsItem(
                 "Zygisk状态", "开启后才可使用增强功能", "未启用");
@@ -505,7 +505,7 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams zygiskStatusLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(88));
         zygiskStatusLp.topMargin = dp(12);
-        list.addView(zygiskHookStatusItem, zygiskStatusLp);
+//        list.addView(zygiskHookStatusItem, zygiskStatusLp);
 
         LinearLayout imageDragSharingItem = createSwitchSettingsItem(
                 "拖拽分享",
@@ -519,7 +519,7 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams imageDragSharingLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(104));
         imageDragSharingLp.topMargin = dp(12);
-        list.addView(imageDragSharingItem, imageDragSharingLp);
+//        list.addView(imageDragSharingItem, imageDragSharingLp);
 
         LinearLayout secureWindowHookItem = createSwitchSettingsItem(
                 "隐私窗口显示",
@@ -533,7 +533,7 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams secureWindowHookLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(104));
         secureWindowHookLp.topMargin = dp(12);
-        list.addView(secureWindowHookItem, secureWindowHookLp);
+//        list.addView(secureWindowHookItem, secureWindowHookLp);
 
         LinearLayout statusBarOverlayHookItem = createSwitchSettingsItem(
                 "顶部间距去除",
@@ -547,14 +547,14 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams statusBarOverlayHookLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(104));
         statusBarOverlayHookLp.topMargin = dp(12);
-        list.addView(statusBarOverlayHookItem, statusBarOverlayHookLp);
+//        list.addView(statusBarOverlayHookItem, statusBarOverlayHookLp);
 
         applyHookSettingsItem = createSettingsItem("应用 Hook 设置", "重启");
         applyHookSettingsItem.setOnClickListener(v -> showHookSettingsRebootDialog());
         LinearLayout.LayoutParams applyHookSettingsLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
         applyHookSettingsLp.topMargin = dp(12);
-        list.addView(applyHookSettingsItem, applyHookSettingsLp);
+//        list.addView(applyHookSettingsItem, applyHookSettingsLp);
         refreshRootAuthorizationView();
         refreshZygiskHookSettingsViews();
 
