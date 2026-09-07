@@ -105,10 +105,16 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
     private long bjAliveTag = 0L;
     private long currentAliveTag = 1L;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private static String currentEventDevId = null;
+    private static String phoneTouchDevId = null;
 
     public RootInputBridgeService()
             throws ReflectiveOperationException {
         Log.i(TAG, "input injection start");
+        ShellCommandResult runRes = run("for d in /sys/class/input/event*; do [ -s \"$d/device/capabilities/abs\" ] && [ \"$(cat \"$d/device/capabilities/abs\")\" != \"0\" ] && name=$(cat \"$d/device/name\" 2>/dev/null) && echo \"$name\" | grep -qi \"touch\" && basename \"$d\"; done", 10);
+        phoneTouchDevId = runRes.output.strip();
+        currentEventDevId = phoneTouchDevId;
+        startGetEventMonitor();
 //        run("pkill -f 'com\\.sangluo\\.onestepc16'", 10);
         Context systemContext = createSystemContext();
         activityManager = (ActivityManager) systemContext.getSystemService(
@@ -165,6 +171,56 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
             }
         }, 0, 1, TimeUnit.SECONDS);
         Log.i(TAG, "input injection backend=" + inputManager.getClass().getName());
+    }
+
+    private void startGetEventMonitor() {
+        new Thread(() -> {
+            try {
+                Process process = Runtime.getRuntime().exec("getevent -lt");
+
+                BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream()),
+                        256
+                );
+
+                String lastEvent = null;
+                String line;
+
+                while ((line = reader.readLine()) != null) {
+                    int start = line.indexOf("/dev/input/");
+                    if (start < 0) {
+                        continue;
+                    }
+
+                    int end = line.indexOf(':', start);
+                    if (end < 0) {
+                        continue;
+                    }
+
+                    String event = line.substring(start, end);
+
+                    // 只有设备变化时才处理
+                    if (!event.equals(lastEvent)) {
+                        lastEvent = event;
+                        currentEventDevId = event.replace("/dev/input/", "");
+                    }
+                }
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
+        }, "GetEventMonitor").start();
+    }
+
+    public static String getCurrentEventDevId(){
+        return currentEventDevId;
+    }
+
+    public static String getPhoneTouchDevId(){
+        return phoneTouchDevId;
+    }
+
+    public static boolean judgetCurrentEventDevEqPhoneTouchDev(){
+        return currentEventDevId != null && currentEventDevId.equals(phoneTouchDevId);
     }
 
     /**

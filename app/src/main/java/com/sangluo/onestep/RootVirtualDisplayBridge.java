@@ -17,6 +17,7 @@ import android.util.Log;
 import android.view.Display;
 import android.view.Surface;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.sangluo.onestep.system.display.DisplayOwnerPolicy;
 import com.sangluo.onestep.system.root.SystemServiceFailurePolicy;
 import com.sangluo.onestep.feature.drag.ImageDragSourcePolicy;
@@ -430,6 +431,7 @@ public final class RootVirtualDisplayBridge extends Binder {
         boolean enabled = data.readInt() != 0;
         boolean accepted = !enabled || (displayId > Display.DEFAULT_DISPLAY
                 && packageName != null && !packageName.isEmpty());
+        Log.d(TAG, "handleUpdateLaunchSource packageName:"+packageName+", displayId:"+displayId+", accepted:"+accepted);
         if (accepted) {
             synchronized (launchRoutingLock) {
                 routingSourceDisplayId = enabled ? displayId : Display.DEFAULT_DISPLAY;
@@ -496,6 +498,7 @@ public final class RootVirtualDisplayBridge extends Binder {
             return;
         }
         synchronized (bridge.launchRoutingLock) {
+//            Log.d(TAG, "noteVirtualInput - "+ "displayId:"+displayId);
             bridge.lastInputDisplayId = displayId;
             bridge.lastInputUptime = SystemClock.uptimeMillis();
         }
@@ -504,6 +507,9 @@ public final class RootVirtualDisplayBridge extends Binder {
     RoutingSource getArmedRoutingSource(String targetPackage) {
         synchronized (launchRoutingLock) {
             long inputAge = SystemClock.uptimeMillis() - lastInputUptime;
+            Log.d(TAG, "getArmedRoutingSource - "+ "routingSourceDisplayId:"+routingSourceDisplayId+", routingSourcePackage:"+routingSourcePackage+", targetPackage:"+targetPackage
+                    +", lastInputDisplayId:"+lastInputDisplayId+", routingSourceDisplayId:"+routingSourceDisplayId
+            );
             if (routingSourceDisplayId <= Display.DEFAULT_DISPLAY
                     || routingSourcePackage.isEmpty()
                     || routingSourcePackage.equals(targetPackage)

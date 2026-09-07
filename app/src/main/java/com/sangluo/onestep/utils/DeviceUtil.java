@@ -49,6 +49,11 @@ public class DeviceUtil {
         }
         for (InputDevice inputDevice : inputDevices) {
             try {
+                int associatedDisplayId = getAssociatedDisplayId(inputDevice);
+                if (associatedDisplayId == displayId){
+                    Log.d(TAG, "设备：" + inputDevice.getName() + "已经绑定到displayid: " + displayId);
+                    continue;
+                }
                 inputManager.removeUniqueIdAssociationByDescriptor(inputDevice.getDescriptor());
                 Display displayObj = ExtDisplayUtil.getDisplayObj(SysServiceObjUtil.getCurrentContext(), displayId);
                 inputManager.addUniqueIdAssociationByDescriptor(inputDevice.getDescriptor(), ExtDisplayUtil.getDisplayUniqueId(displayObj));
@@ -57,6 +62,24 @@ public class DeviceUtil {
                 Log.d(TAG, "绑定设备：" + inputDevice + "到displayid: " + displayId + "失败");
                 throw new RuntimeException(e);
             }
+        }
+    }
+
+    /**
+     * 获取当前设备绑定的displayid
+     * @param inputDevice
+     * @return
+     */
+    private static int getAssociatedDisplayId(InputDevice inputDevice) {
+        try {
+            Method method = InputDevice.class.getDeclaredMethod(
+                    "getAssociatedDisplayId"
+            );
+            method.setAccessible(true);
+            return (int) method.invoke(inputDevice);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Display.DEFAULT_DISPLAY;
         }
     }
 

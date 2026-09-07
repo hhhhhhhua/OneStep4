@@ -2,10 +2,18 @@ package com.sangluo.onestep;
 
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Parcel;
 import android.os.RemoteException;
 import android.util.Log;
+import android.view.Display;
+
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
+import com.sangluo.onestep.shizuku.RootInputBridgeService;
+import com.sangluo.onestep.utils.ExtDisplayUtil;
+import com.sangluo.onestep.utils.SysServiceObjUtil;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -88,6 +96,7 @@ final class RootCrossAppLaunchController extends Binder {
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
             throws RemoteException {
+//        Log.d(TAG, "onTransact code:"+code + ", data:"+data + ", reply: "+reply + ", flags: "+flags);
         if (code == INTERFACE_TRANSACTION) {
             reply.writeString(DESCRIPTOR);
             return true;
@@ -96,7 +105,20 @@ final class RootCrossAppLaunchController extends Binder {
         if (code == activityStartingTransaction) {
             Intent intent = data.readInt() == 0 ? null : Intent.CREATOR.createFromParcel(data);
             String targetPackage = data.readString();
-            boolean allow = shouldAllowStart(intent, targetPackage);
+            Log.d(TAG, "activityStartingTransaction targetPackage:"+targetPackage+", thread:" + Thread.currentThread().getName());
+            boolean allow;
+            boolean b = RootInputBridgeService.judgetCurrentEventDevEqPhoneTouchDev();
+            Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(SysServiceObjUtil.getCurrentContext());
+            if(hdmiDisplayId != null && b){
+                allow = true;
+            }else{
+                allow = shouldAllowStart(intent, targetPackage);
+            }
+            Log.d(TAG, "judgetCurrentEventDevEqPhoneTouchDev res:"+b
+                    +", getCurrentEventDevId:"+RootInputBridgeService.getCurrentEventDevId()+"" +
+                    ", getPhoneTouchDevId:"+RootInputBridgeService.getPhoneTouchDevId() +
+                    ", hdmiDisplayId:"+hdmiDisplayId
+            );
             reply.writeNoException();
             reply.writeInt(allow ? 1 : 0);
             return true;
@@ -141,6 +163,8 @@ final class RootCrossAppLaunchController extends Binder {
                 || displayBridge.consumeLaunchBypass(targetPackage)) {
             return true;
         }
+
+        Log.d(TAG, "shouldAllowStart three startapp: "+targetPackage);
         try {
             RootVirtualDisplayBridge.RoutingSource source =
                     displayBridge.getArmedRoutingSource(targetPackage);

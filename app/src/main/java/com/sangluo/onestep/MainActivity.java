@@ -192,7 +192,7 @@ public class MainActivity extends Activity {
             "com.sangluo.onestep.extra.SHOW_DESKTOP_HOME";
     static final String EXTRA_DEFAULT_DISPLAY_RELAY_ATTEMPTED =
             "com.sangluo.onestep.extra.DEFAULT_DISPLAY_RELAY_ATTEMPTED";
-    private static WeakReference<MainActivity> defaultDisplayInstance =
+    static WeakReference<MainActivity> defaultDisplayInstance =
             new WeakReference<>(null);
     private static final int MAX_WINDOWS = MAX_SIDE_WINDOWS + 2;
     private static final int REQUEST_PICK_BACKGROUND = 42;
@@ -270,7 +270,7 @@ public class MainActivity extends Activity {
     };
 
     private final LauncherApp[] windowApps = new LauncherApp[MAX_WINDOWS];
-    private final OneStepWindowView[] windowViews = new OneStepWindowView[MAX_WINDOWS];
+    final OneStepWindowView[] windowViews = new OneStepWindowView[MAX_WINDOWS];
     public static final EmbeddedAppHost[] embeddedHosts = new EmbeddedAppHost[MAX_WINDOWS];
     private final int[] embeddedSyncGenerations = new int[MAX_WINDOWS];
     private final boolean[] embeddedSlotClosing = new boolean[MAX_WINDOWS];
@@ -828,6 +828,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        Log.d(TAG + "_LIFECYCLE", "onCreate");
         if (isSystemAppInstall()) {
             setTheme(R.style.Theme_OneStep40_TransparentNavigation);
         }
@@ -1100,6 +1101,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
+        Log.d(TAG + "_LIFECYCLE", "onConfigurationChanged");
         super.onConfigurationChanged(newConfig);
         if (directBootHome || !fullHomeInitialized) {
             return;
@@ -1979,6 +1981,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        Log.d(TAG + "_LIFECYCLE", "onDestroy");
         activityDestroyed = true;
         if (directBootHome) {
             unregisterDirectBootUnlockReceiver();
@@ -4940,7 +4943,7 @@ public class MainActivity extends Activity {
                 && windowViews[slot].isDesktopHomeShown();
     }
 
-    private int findDesktopHomeSlot() {
+    int findDesktopHomeSlot() {
         for (int slot = 0; slot < MAX_WINDOWS; slot++) {
             if (isDesktopHomeSlot(slot)) {
                 return slot;

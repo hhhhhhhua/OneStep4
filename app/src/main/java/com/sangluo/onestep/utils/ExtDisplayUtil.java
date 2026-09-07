@@ -93,7 +93,7 @@ public class ExtDisplayUtil {
                             " size=" + d.getWidth() + "x" + d.getHeight();
                     Log.i(TAG, s);
 
-                    if (!internal){
+                    if (!internal && !d.getName().contains("OneStepSlot")){
                         return d.getDisplayId();
                     }
                 }

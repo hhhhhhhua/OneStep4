@@ -120,6 +120,7 @@ final class RootTaskStackObserver extends Binder {
         ComponentName topActivity = taskInfo.topActivity;
         String packageName = topActivity == null ? "" : topActivity.getPackageName();
         String componentName = topActivity == null ? "" : topActivity.flattenToShortString();
+        Log.d(TAG, "notifyTaskEvent packageName:"+packageName + ", displayId:"+displayId);
         displayBridge.notifyTaskEvent(
                 event, displayId, readTaskId(taskInfo), packageName, componentName);
     }
