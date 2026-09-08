@@ -230,7 +230,7 @@ public class ShizukuServiceUtil {
         int retryIntervalMs = 500;
 
         for (int i = 0; i < maxRetries; i++) {
-            if (ShizukuServiceUtil.getShizukuCommonService() != null) {
+            if (ShizukuServiceUtil.getShizukuCommonService() != null && ShizukuServiceUtil.getRootInputBridgeService() != null) {
                 break;
             }
 

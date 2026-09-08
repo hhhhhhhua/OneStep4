@@ -18,6 +18,7 @@ import com.sangluo.onestep.utils.SysServiceObjUtil;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.HashSet;
 
 /** Intercepts cross-package starts while a OneStep virtual display owns focus. */
 final class RootCrossAppLaunchController extends Binder {
@@ -109,16 +110,21 @@ final class RootCrossAppLaunchController extends Binder {
             boolean allow;
             boolean b = RootInputBridgeService.judgetCurrentEventDevEqPhoneTouchDev();
             Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(SysServiceObjUtil.getCurrentContext());
-            if(hdmiDisplayId != null && b){
+            if((hdmiDisplayId != null && b)){
                 allow = true;
             }else{
-                allow = shouldAllowStart(intent, targetPackage);
+                if (RootInputBridgeService.getAppLaunchWhiteSet().contains(targetPackage)){
+                    allow = true;
+                }else{
+                    allow = shouldAllowStart(intent, targetPackage);
+                }
             }
-            Log.d(TAG, "judgetCurrentEventDevEqPhoneTouchDev res:"+b
+            /*Log.d(TAG, "judgetCurrentEventDevEqPhoneTouchDev res:"+b
                     +", getCurrentEventDevId:"+RootInputBridgeService.getCurrentEventDevId()+"" +
                     ", getPhoneTouchDevId:"+RootInputBridgeService.getPhoneTouchDevId() +
-                    ", hdmiDisplayId:"+hdmiDisplayId
-            );
+                    ", hdmiDisplayId:"+hdmiDisplayId +
+                    ", RootInputBridgeService.getAppLaunchWhiteSet():"+JSONObject.toJSONString(RootInputBridgeService.getAppLaunchWhiteSet())
+            );*/
             reply.writeNoException();
             reply.writeInt(allow ? 1 : 0);
             return true;

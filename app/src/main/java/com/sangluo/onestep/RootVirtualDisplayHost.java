@@ -1282,7 +1282,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 return;
             }
         }
-        ShizukuServiceUtil.waitServiceInitOver();
 
         Set<String> packages = getRecordedSensorUidOverrides();
         for (String packageName : packages) {
@@ -4031,16 +4030,23 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     }
 
     private void ensureRootInputBridgeStarted(boolean force, boolean synchronous) {
-        if (synchronous) {
-            startRootInputBridgeIfNeeded(force);
-            return;
-        }
-        try {
-            rootExecutor.execute(() -> startRootInputBridgeIfNeeded(force));
-        } catch (RuntimeException e) {
-            Log.w(TAG, "Queue direct input bridge start failed: "
-                    + e.getClass().getSimpleName());
-        }
+        rootExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                ShizukuServiceUtil.waitServiceInitOver();
+
+                if (synchronous) {
+                    startRootInputBridgeIfNeeded(force);
+                    return;
+                }
+                try {
+                    rootExecutor.execute(() -> startRootInputBridgeIfNeeded(force));
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "Queue direct input bridge start failed: "
+                            + e.getClass().getSimpleName());
+                }
+            }
+        });
     }
 
     private void showRootAuthorizationHintIfContentUnavailable() {

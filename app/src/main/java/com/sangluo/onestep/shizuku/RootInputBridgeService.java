@@ -40,6 +40,7 @@ import java.io.OutputStreamWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.BlockingQueue;
@@ -107,6 +108,14 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private static String currentEventDevId = null;
     private static String phoneTouchDevId = null;
+    private static HashSet<String> APP_LAUNCH_WHITE_LIST = new HashSet<>(){{
+        add("com.jozein.xedgepro");
+        add("com.android.launcher");
+        add("com.anland.consumer");
+    }};
+    private static HashSet<String> CURRENT_APP_LAUNCH_WHITE_LIST = new HashSet<>(){{
+        addAll(APP_LAUNCH_WHITE_LIST);
+    }};
 
     public RootInputBridgeService()
             throws ReflectiveOperationException {
@@ -171,6 +180,20 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
             }
         }, 0, 1, TimeUnit.SECONDS);
         Log.i(TAG, "input injection backend=" + inputManager.getClass().getName());
+    }
+
+    public static HashSet<String> getAppLaunchWhiteSet(){
+        return CURRENT_APP_LAUNCH_WHITE_LIST;
+    }
+
+    @Override
+    public void sendAppLaunchWhiteSet(List<String> whiteList){
+        if(whiteList != null && !whiteList.isEmpty()){
+            CURRENT_APP_LAUNCH_WHITE_LIST = new HashSet<>(){{
+                addAll(APP_LAUNCH_WHITE_LIST);
+                addAll(whiteList);
+            }};
+        }
     }
 
     private void startGetEventMonitor() {

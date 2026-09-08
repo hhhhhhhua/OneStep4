@@ -47,13 +47,15 @@ public class ShizukuKeyService extends IShizukuKeyService.Stub {
 //                    Log.d(TAG, line);
                     // 只捕获 KEY_ESC 且状态为 DOWN 的事件
                     if (line.contains("KEY_ESC") && line.contains("DOWN")) {
-                        dispatchEscEvent("KEY_ESC");
+//                        dispatchEscEvent("KEY_ESC");
                     }
-                    else if (line.contains("KEY_F1") && line.contains("DOWN")) {
+                    else if (line.contains("KEY_F1") && line.contains("DOWN")
+                            && !(line.contains("KEY_F11") || line.contains("KEY_F12") || line.contains("KEY_F10"))
+                    ) {
                         dispatchEscEvent("KEY_F1");
                     }
                     else if (line.matches(".*KEY_[1-7].*DOWN.*")) {
-                        dispatchEscEvent(line);
+//                        dispatchEscEvent(line);
                     }
                 }
             } catch (Throwable e) {

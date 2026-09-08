@@ -840,10 +840,15 @@ public class MainActivity extends Activity {
             Log.i(TAG, "Showing Direct Boot HOME until user unlock");
             return;
         }
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
-        initializeFullHome();
-    }
+        mediaRootExecutor.execute(() -> {
+            ShizukuServiceUtil.waitServiceInitOver();
 
+            MainActivity.this.mainHandler.post(() -> {
+                requestWindowFeature(Window.FEATURE_NO_TITLE);
+                initializeFullHome();
+            });
+        });
+    }
 
     public static void startEscListener() {
         // 绑定注册 Shizuku UserService
@@ -4838,13 +4843,7 @@ public class MainActivity extends Activity {
 
     private void requestDesktopHomeInMain() {
         desktopHomeRequestPending = true;
-        mediaRootExecutor.execute(new Runnable() {
-            @Override
-            public void run() {
-                ShizukuServiceUtil.waitServiceInitOver();
-                MainActivity.this.mainHandler.post(MainActivity.this::showDesktopHomeInMain);
-            }
-        });
+        showDesktopHomeInMain();
     }
 
     private void stageDesktopHomeForMainPromotion(int slot) {

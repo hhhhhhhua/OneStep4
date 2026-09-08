@@ -1,5 +1,7 @@
 package com.sangluo.onestep.ui.settings;
 
+import static android.content.Context.MODE_PRIVATE;
+
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
@@ -16,11 +18,15 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
+import android.os.RemoteException;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.text.InputType;
 import android.text.method.LinkMovementMethod;
 import android.text.TextUtils;
+import android.text.method.ScrollingMovementMethod;
 import android.text.util.Linkify;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -30,6 +36,7 @@ import android.view.Window;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.CheckedTextView;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -39,6 +46,8 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.sangluo.onestep.IRootInputBridgeService;
+import com.sangluo.onestep.OneStepApplication;
 import com.sangluo.onestep.R;
 import com.sangluo.onestep.feature.embedding.DefaultHomeRoutingPolicy;
 import com.sangluo.onestep.model.LauncherApp;
@@ -46,6 +55,7 @@ import com.sangluo.onestep.system.root.ZygiskHookConfig;
 import com.sangluo.onestep.ui.widget.AspectRatioImageView;
 import com.sangluo.onestep.ui.widget.FixedViewportFrameLayout;
 import com.sangluo.onestep.ui.window.OneStepWindowView;
+import com.sangluo.onestep.utils.ShizukuServiceUtil;
 
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -58,6 +68,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -80,6 +91,7 @@ import static com.sangluo.onestep.data.settings.OneStepSettings.clamp;
 import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeSideWindowCount;
 
 public final class SettingsPanelController {
+    private static final String TAG = "OneStep40_SettingsPanelController";
     private static final long SLIDER_LIVE_UPDATE_INTERVAL_MS = 100L;
     private static final int TOP_APP_LIST_DIALOG_HEIGHT_DP = 600;
     private static final ColorStateList DIALOG_CHOICE_TINT = new ColorStateList(
@@ -237,6 +249,31 @@ public final class SettingsPanelController {
     public SettingsPanelController(Activity activity, Callbacks callbacks) {
         this.activity = activity;
         this.callbacks = callbacks;
+        loadAppLaunchWhiteSet();
+    }
+
+    private void loadAppLaunchWhiteSet(){
+        IRootInputBridgeService rootInputBridgeService = ShizukuServiceUtil.getRootInputBridgeService();
+        String text = OneStepApplication.getContext().getSharedPreferences("settings", MODE_PRIVATE)
+                .getString(PREF_WHITE_LIST, null);
+        if (text == null){
+            return;
+        }
+
+        ArrayList<String> strings = new ArrayList<>();
+        for (String line : text.split("\\r?\\n")) {
+            String packageName = line.trim();
+
+            if (!packageName.isEmpty()) {
+                strings.add(packageName);
+            }
+        }
+        try {
+            rootInputBridgeService.sendAppLaunchWhiteSet(strings);
+        } catch (RemoteException e) {
+            Log.e(TAG, "loadAppLaunchWhiteSet error: ", e);
+            throw new RuntimeException(e);
+        }
     }
 
     public void show() {
@@ -282,6 +319,72 @@ public final class SettingsPanelController {
 
     private OneStepWindowView getActiveMainWindowView() {
         return callbacks.activeMainWindowView();
+    }
+
+    private void showWhiteListDialog() {
+        final EditText editText = new EditText(activity);
+
+        editText.setGravity(Gravity.TOP | Gravity.START);
+        editText.setTextSize(14);
+        editText.setSingleLine(false);
+        editText.setInputType(
+                InputType.TYPE_CLASS_TEXT |
+                        InputType.TYPE_TEXT_FLAG_MULTI_LINE |
+                        InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        );
+
+        // 一行一个
+        String text = activity.getSharedPreferences("settings", MODE_PRIVATE)
+                .getString(PREF_WHITE_LIST, null);
+
+        editText.setText(text != null ? text : "");
+        editText.setSelection(editText.length());
+
+        // 可以上下滚动
+        editText.setVerticalScrollBarEnabled(true);
+        editText.setMovementMethod(new ScrollingMovementMethod());
+
+        // 外层容器，控制高度 50%
+        FrameLayout container = new FrameLayout(activity);
+
+        int padding = dp(16);
+        container.setPadding(padding, 0, padding, 0);
+
+        FrameLayout.LayoutParams editLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                (int) (activity.getResources().getDisplayMetrics().heightPixels * 0.5f)
+        );
+
+        container.addView(editText, editLp);
+
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle("白名单")
+                .setView(container)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                // 保存
+                saveWhiteList(editText.getText().toString());
+                loadAppLaunchWhiteSet();
+
+                dialog.dismiss();
+            });
+        });
+
+        dialog.show();
+    }
+
+    private static final String PREF_WHITE_LIST = "white_list";
+
+    private void saveWhiteList(String text) {
+
+        OneStepApplication.getContext().getSharedPreferences("settings", MODE_PRIVATE)
+                .edit()
+                .putString(PREF_WHITE_LIST, text)
+                .apply();
     }
 
     private FrameLayout createInternalSettingsPage() {
@@ -403,6 +506,15 @@ public final class SettingsPanelController {
         topAppListLp.topMargin = dp(12);
         list.addView(topAppListItem, topAppListLp);
 
+        LinearLayout lauchAppWhiteLayout = createSettingsItem("launchApp白名单", "第三方桌面launchApp拦截白名单", "点击设置");
+        topAppStripSpacingValueView = (TextView) lauchAppWhiteLayout.getTag();
+        LinearLayout.LayoutParams systemHomeLp2 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(78));
+        systemHomeLp2.topMargin = dp(12);
+        list.addView(lauchAppWhiteLayout, systemHomeLp2);
+        // 点击编辑白名单
+        lauchAppWhiteLayout.setOnClickListener(v -> showWhiteListDialog());
+
         LinearLayout sideWindowCountItem = createSettingsItem("小窗口数量",
                 getSideWindowCountLabel());
         sideWindowCountValueView = (TextView) sideWindowCountItem.getTag();
@@ -488,7 +600,7 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams statusBarSpacingLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
         statusBarSpacingLp.topMargin = dp(12);
-//        list.addView(statusBarSpacingItem, statusBarSpacingLp);
+        list.addView(statusBarSpacingItem, statusBarSpacingLp);
 
         rootAuthorizationItem = createSettingsItem(
                 "ROOT 权限", "必需授权才可正常使用", "未授权");

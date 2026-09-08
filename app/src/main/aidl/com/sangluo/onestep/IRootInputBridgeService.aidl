@@ -1,11 +1,13 @@
 // IRootInputBridgeService.aidl
 package com.sangluo.onestep;
 
-// Declare any non-default types here with import statements
+import java.util.List;
 
 interface IRootInputBridgeService {
 
     String handleCommand(String bridgeToken, String cmd);
 
     void destroy();
+
+    void sendAppLaunchWhiteSet(in List<String> whiteList);
 }

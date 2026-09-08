@@ -62,6 +62,17 @@ public final class OneStepApplication extends Application {
         }
 
         this.sInstance = this;
+
+        Thread.setDefaultUncaughtExceptionHandler(
+                (thread, throwable) -> {
+
+                    Log.e(TAG + "_GlobalCrash",
+                            "FATAL EXCEPTION: " + thread.getName(),
+                            throwable);
+
+                    System.exit(0);
+                }
+        );
     }
 
     private void cpFridaJsToDataDir() throws IOException {
