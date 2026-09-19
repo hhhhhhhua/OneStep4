@@ -504,6 +504,10 @@ public final class RootVirtualDisplayBridge extends Binder {
         }
     }
 
+    String getRoutingSourcePackage(){
+        return routingSourcePackage;
+    }
+
     RoutingSource getArmedRoutingSource(String targetPackage) {
         synchronized (launchRoutingLock) {
             long inputAge = SystemClock.uptimeMillis() - lastInputUptime;

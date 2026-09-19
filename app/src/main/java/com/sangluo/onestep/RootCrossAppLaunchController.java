@@ -19,6 +19,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.HashSet;
+import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Intercepts cross-package starts while a OneStep virtual display owns focus. */
 final class RootCrossAppLaunchController extends Binder {
@@ -32,6 +35,10 @@ final class RootCrossAppLaunchController extends Binder {
     private final int appEarlyNotRespondingTransaction;
     private final int appNotRespondingTransaction;
     private final int systemNotRespondingTransaction;
+    private Intent lastIntent = null;
+    private String lastTargetPackage = null;
+    private final ExecutorService executor =
+            Executors.newSingleThreadExecutor();
 
     private RootCrossAppLaunchController(RootVirtualDisplayBridge displayBridge,
                                          Class<?> controllerStubClass)
@@ -106,25 +113,23 @@ final class RootCrossAppLaunchController extends Binder {
         if (code == activityStartingTransaction) {
             Intent intent = data.readInt() == 0 ? null : Intent.CREATOR.createFromParcel(data);
             String targetPackage = data.readString();
-            Log.d(TAG, "activityStartingTransaction targetPackage:"+targetPackage+", thread:" + Thread.currentThread().getName());
+            String routingSourcePackage = displayBridge.getRoutingSourcePackage();
+            Log.d(TAG, "activityStartingTransaction targetPackage:"+targetPackage+", thread:" + Thread.currentThread().getName()+", getRoutingSourcePackage:"+displayBridge.getRoutingSourcePackage());
             boolean allow;
             boolean b = RootInputBridgeService.judgetCurrentEventDevEqPhoneTouchDev();
             Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(SysServiceObjUtil.getCurrentContext());
-            if((hdmiDisplayId != null && b)){
+            lastTargetPackage = targetPackage;
+            lastIntent = intent;
+            if (hdmiDisplayId != null && b){
                 allow = true;
             }else{
-                if (RootInputBridgeService.getAppLaunchWhiteSet().contains(targetPackage)){
-                    allow = true;
-                }else{
+                if(RootInputBridgeService.getAppLaunchWhiteSet().contains(displayBridge.getRoutingSourcePackage())){
                     allow = shouldAllowStart(intent, targetPackage);
+                }else{
+                    allow = true;
                 }
             }
-            /*Log.d(TAG, "judgetCurrentEventDevEqPhoneTouchDev res:"+b
-                    +", getCurrentEventDevId:"+RootInputBridgeService.getCurrentEventDevId()+"" +
-                    ", getPhoneTouchDevId:"+RootInputBridgeService.getPhoneTouchDevId() +
-                    ", hdmiDisplayId:"+hdmiDisplayId +
-                    ", RootInputBridgeService.getAppLaunchWhiteSet():"+JSONObject.toJSONString(RootInputBridgeService.getAppLaunchWhiteSet())
-            );*/
+
             reply.writeNoException();
             reply.writeInt(allow ? 1 : 0);
             return true;

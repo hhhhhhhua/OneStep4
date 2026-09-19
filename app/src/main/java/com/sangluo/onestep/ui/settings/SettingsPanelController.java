@@ -1,6 +1,22 @@
 package com.sangluo.onestep.ui.settings;
 
 import static android.content.Context.MODE_PRIVATE;
+import static com.sangluo.onestep.data.settings.OneStepSettings.CORNER_TRIGGER_SENSITIVITY_MAX;
+import static com.sangluo.onestep.data.settings.OneStepSettings.CORNER_TRIGGER_SENSITIVITY_MIN;
+import static com.sangluo.onestep.data.settings.OneStepSettings.MIN_SIDE_WINDOWS;
+import static com.sangluo.onestep.data.settings.OneStepSettings.ONE_STEP_TRIGGER_AREA_SCALE_MAX;
+import static com.sangluo.onestep.data.settings.OneStepSettings.ONE_STEP_TRIGGER_AREA_SCALE_MIN;
+import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_ICON_SCALE_MAX;
+import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_ICON_SCALE_MIN;
+import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_STRIP_SPACING_SCALE_MAX;
+import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_STRIP_SPACING_SCALE_MIN;
+import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_STRIP_VERTICAL_PADDING_SCALE_MAX;
+import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_STRIP_VERTICAL_PADDING_SCALE_MIN;
+import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_NAV_VERTICAL_MARGIN_SCALE_MAX;
+import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_NAV_VERTICAL_MARGIN_SCALE_MIN;
+import static com.sangluo.onestep.data.settings.OneStepSettings.canUseSideWindowCount;
+import static com.sangluo.onestep.data.settings.OneStepSettings.clamp;
+import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeSideWindowCount;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -22,8 +38,8 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.InputType;
-import android.text.method.LinkMovementMethod;
 import android.text.TextUtils;
+import android.text.method.LinkMovementMethod;
 import android.text.method.ScrollingMovementMethod;
 import android.text.util.Linkify;
 import android.util.Log;
@@ -46,6 +62,10 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
 import com.sangluo.onestep.IRootInputBridgeService;
 import com.sangluo.onestep.OneStepApplication;
 import com.sangluo.onestep.R;
@@ -57,10 +77,6 @@ import com.sangluo.onestep.ui.widget.FixedViewportFrameLayout;
 import com.sangluo.onestep.ui.window.OneStepWindowView;
 import com.sangluo.onestep.utils.ShizukuServiceUtil;
 
-import androidx.recyclerview.widget.ItemTouchHelper;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -68,27 +84,9 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-
-import static com.sangluo.onestep.data.settings.OneStepSettings.CORNER_TRIGGER_SENSITIVITY_MAX;
-import static com.sangluo.onestep.data.settings.OneStepSettings.CORNER_TRIGGER_SENSITIVITY_MIN;
-import static com.sangluo.onestep.data.settings.OneStepSettings.MIN_SIDE_WINDOWS;
-import static com.sangluo.onestep.data.settings.OneStepSettings.ONE_STEP_TRIGGER_AREA_SCALE_MAX;
-import static com.sangluo.onestep.data.settings.OneStepSettings.ONE_STEP_TRIGGER_AREA_SCALE_MIN;
-import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_ICON_SCALE_MAX;
-import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_ICON_SCALE_MIN;
-import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_STRIP_SPACING_SCALE_MAX;
-import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_STRIP_SPACING_SCALE_MIN;
-import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_STRIP_VERTICAL_PADDING_SCALE_MAX;
-import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_APP_STRIP_VERTICAL_PADDING_SCALE_MIN;
-import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_NAV_VERTICAL_MARGIN_SCALE_MAX;
-import static com.sangluo.onestep.data.settings.OneStepSettings.TOP_NAV_VERTICAL_MARGIN_SCALE_MIN;
-import static com.sangluo.onestep.data.settings.OneStepSettings.canUseSideWindowCount;
-import static com.sangluo.onestep.data.settings.OneStepSettings.clamp;
-import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeSideWindowCount;
 
 public final class SettingsPanelController {
     private static final String TAG = "OneStep40_SettingsPanelController";
@@ -249,7 +247,7 @@ public final class SettingsPanelController {
     public SettingsPanelController(Activity activity, Callbacks callbacks) {
         this.activity = activity;
         this.callbacks = callbacks;
-        loadAppLaunchWhiteSet();
+//        loadAppLaunchWhiteSet();
     }
 
     private void loadAppLaunchWhiteSet(){
@@ -471,7 +469,7 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams systemHomeLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
         systemHomeLp.topMargin = dp(12);
-        list.addView(systemHomeItem, systemHomeLp);
+//        list.addView(systemHomeItem, systemHomeLp);
 
         if (isHyperOs()) {
             LinearLayout gestureNavigationItem = createSettingsItem(
@@ -511,7 +509,7 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams systemHomeLp2 = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(78));
         systemHomeLp2.topMargin = dp(12);
-        list.addView(lauchAppWhiteLayout, systemHomeLp2);
+//        list.addView(lauchAppWhiteLayout, systemHomeLp2);
         // 点击编辑白名单
         lauchAppWhiteLayout.setOnClickListener(v -> showWhiteListDialog());
 
@@ -1696,7 +1694,7 @@ public final class SettingsPanelController {
                                         currentCheckedItem, true);
                             }
                             Toast.makeText(activity,
-                                    "请先将系统默认桌面设置为 OneStep",
+                                    "不允许选择系统桌面，请选择其它桌面软件",
                                     Toast.LENGTH_SHORT).show();
                             return;
                         }

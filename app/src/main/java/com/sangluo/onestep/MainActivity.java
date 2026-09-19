@@ -42,6 +42,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
+import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -846,6 +847,7 @@ public class MainActivity extends Activity {
             MainActivity.this.mainHandler.post(() -> {
                 requestWindowFeature(Window.FEATURE_NO_TITLE);
                 initializeFullHome();
+                sendBuiltInDesktopApp();
             });
         });
     }
@@ -4776,6 +4778,19 @@ public class MainActivity extends Activity {
             case REPLACE_MAIN:
                 replaceMainWithDesktopHome();
                 break;
+        }
+    }
+
+    private void sendBuiltInDesktopApp() {
+        IRootInputBridgeService rootInputBridgeService = ShizukuServiceUtil.getRootInputBridgeService();
+        LauncherApp launcherApp = resolveBuiltInDesktopApp();
+        try {
+            rootInputBridgeService.sendAppLaunchWhiteSet(new ArrayList<>(){{
+                add(launcherApp != null ? launcherApp.componentName.getPackageName() : null);
+            }});
+        } catch (RemoteException e) {
+            Log.e(TAG, "loadAppLaunchWhiteSet error: ", e);
+            throw new RuntimeException(e);
         }
     }
 

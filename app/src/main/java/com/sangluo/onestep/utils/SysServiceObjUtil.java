@@ -3,12 +3,15 @@ package com.sangluo.onestep.utils;
 import android.content.Context;
 import android.hardware.display.DisplayManager;
 import android.hardware.input.IInputManager;
+import android.media.session.MediaSessionManager;
 import android.os.IBinder;
 import android.util.Log;
 import android.view.Display;
 
 import com.sangluo.onestep.OneStepApplication;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
@@ -27,6 +30,70 @@ public class SysServiceObjUtil {
                         )
                 );
         return inputManager;
+    }
+
+    public static MediaSessionManager getMediaSessionManager(Context context) {
+        try {
+            // 1. 通过正常构造器创建对象
+            Constructor<MediaSessionManager> constructor =
+                    MediaSessionManager.class.getDeclaredConstructor(Context.class);
+            constructor.setAccessible(true);
+
+            MediaSessionManager manager =
+                    constructor.newInstance(context);
+
+            // 2. Shizuku 获取 media_session Binder
+            IBinder binder =
+                    SystemServiceHelper.getSystemService("media_session");
+
+            // 3. Shizuku Binder 包装
+            IBinder wrappedBinder =
+                    new ShizukuBinderWrapper(binder);
+
+            // 4. 反射调用 ISessionManager.Stub.asInterface()
+            Class<?> stubClass = Class.forName(
+                    "android.media.session.ISessionManager$Stub"
+            );
+
+            Method asInterface = stubClass.getDeclaredMethod(
+                    "asInterface",
+                    IBinder.class
+            );
+            asInterface.setAccessible(true);
+
+            Object sessionService =
+                    asInterface.invoke(null, wrappedBinder);
+
+            // 5. 找 MediaSessionManager 内部的 ISessionManager 字段
+            Field serviceField = null;
+
+            for (Field field :
+                    MediaSessionManager.class.getDeclaredFields()) {
+
+                if (field.getType().getName().equals(
+                        "android.media.session.ISessionManager")) {
+
+                    serviceField = field;
+                    break;
+                }
+            }
+
+            if (serviceField == null) {
+                throw new NoSuchFieldException(
+                        "ISessionManager field not found"
+                );
+            }
+
+            serviceField.setAccessible(true);
+
+            // 6. 替换成 Shizuku 的 Binder
+            serviceField.set(manager, sessionService);
+
+            return manager;
+
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static IInputManager getInputManagerByShizukuService(){

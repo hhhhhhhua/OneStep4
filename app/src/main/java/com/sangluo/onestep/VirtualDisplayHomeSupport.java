@@ -8,6 +8,9 @@ import android.view.Surface;
 
 import androidx.annotation.RequiresApi;
 
+import com.sangluo.onestep.shizuku.RootInputBridgeService;
+import com.sangluo.onestep.system.root.ShellCommandResult;
+
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -91,9 +94,12 @@ final class VirtualDisplayHomeSupport {
     private static VirtualDisplayConfig buildHomeSupportedConfig(
             String name, int width, int height, int densityDpi,
             Surface surface, int flags) throws ReflectiveOperationException {
+        ShellCommandResult runRes = RootInputBridgeService.getInstance().run("cmd display get-active-display-mode-at-start 0 | awk '{print $NF}'", 10);
+        String output = runRes.output;
         VirtualDisplayConfig.Builder builder = new VirtualDisplayConfig.Builder(
                 name, width, height, densityDpi)
                 .setSurface(surface)
+                .setRequestedRefreshRate(Float.parseFloat(output))
                 .setFlags(flags);
         Method setHomeSupported = builder.getClass().getMethod(
                 "setHomeSupported", boolean.class);

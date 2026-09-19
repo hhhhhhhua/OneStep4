@@ -11,6 +11,8 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.sangluo.onestep.MediaNotificationListenerService;
+import com.sangluo.onestep.OneStepApplication;
+import com.sangluo.onestep.utils.SysServiceObjUtil;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -111,8 +113,7 @@ public final class MediaSessionCoordinator implements AutoCloseable {
         this.context = context.getApplicationContext();
         this.callbackHandler = callbackHandler;
         this.listener = listener;
-        sessionManager = (MediaSessionManager) context.getSystemService(
-                Context.MEDIA_SESSION_SERVICE);
+        sessionManager = SysServiceObjUtil.getMediaSessionManager(OneStepApplication.getContext());
     }
 
     public void refresh() {

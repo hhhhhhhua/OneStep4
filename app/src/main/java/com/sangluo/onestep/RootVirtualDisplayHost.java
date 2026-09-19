@@ -3246,12 +3246,10 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 | DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
                 | DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
                 | VIRTUAL_DISPLAY_FLAG_SUPPORTS_TOUCH_HIDDEN
-                | VIRTUAL_DISPLAY_FLAG_SHOULD_SHOW_SYSTEM_DECORATIONS_HIDDEN
                 | VIRTUAL_DISPLAY_FLAG_TRUSTED_HIDDEN
                 | VIRTUAL_DISPLAY_FLAG_OWN_FOCUS_HIDDEN;
         int trustedPrivateFlags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
                 | VIRTUAL_DISPLAY_FLAG_SUPPORTS_TOUCH_HIDDEN
-                | VIRTUAL_DISPLAY_FLAG_SHOULD_SHOW_SYSTEM_DECORATIONS_HIDDEN
                 | VIRTUAL_DISPLAY_FLAG_TRUSTED_HIDDEN
                 | VIRTUAL_DISPLAY_FLAG_OWN_FOCUS_HIDDEN;
         int touchInteractiveFlags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
@@ -3353,8 +3351,7 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         virtualDisplayHasSystemDecorations = actualDisplayFlags >= 0
                 ? (actualDisplayFlags
                 & DISPLAY_FLAG_SHOULD_SHOW_SYSTEM_DECORATIONS_HIDDEN) != 0
-                : (selectedFlags
-                & VIRTUAL_DISPLAY_FLAG_SHOULD_SHOW_SYSTEM_DECORATIONS_HIDDEN) != 0;
+                : selectedFlags != 0;
         virtualNavigationBarHeightPx = virtualDisplayHasSystemDecorations
                 ? resolveVirtualNavigationBarHeight(hostedDisplay) : 0;
         if ((selectedFlags & VIRTUAL_DISPLAY_FLAG_ROTATES_WITH_CONTENT_HIDDEN) == 0

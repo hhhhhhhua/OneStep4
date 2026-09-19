@@ -20,6 +20,7 @@ import android.view.MotionEvent;
 import android.view.Surface;
 
 import com.sangluo.onestep.IRootInputBridgeService;
+import com.sangluo.onestep.MainActivity;
 import com.sangluo.onestep.MotionEventCodec;
 import com.sangluo.onestep.RootActivityManagerCompat;
 import com.sangluo.onestep.RootVirtualDisplayBridge;
@@ -37,6 +38,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -57,7 +59,8 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
     private Thread readerThread;
     private int commandSequence;
     private volatile boolean rootAccessConfirmed;
-
+    static WeakReference<RootInputBridgeService> defaultInstance =
+            new WeakReference<>(null);
 
     private static final String TAG = "OneStep40-OneStepInputBridge";
     private static final int INJECT_INPUT_EVENT_MODE_ASYNC = 0;
@@ -109,9 +112,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
     private static String currentEventDevId = null;
     private static String phoneTouchDevId = null;
     private static HashSet<String> APP_LAUNCH_WHITE_LIST = new HashSet<>(){{
-        add("com.jozein.xedgepro");
-        add("com.android.launcher");
-        add("com.anland.consumer");
+
     }};
     private static HashSet<String> CURRENT_APP_LAUNCH_WHITE_LIST = new HashSet<>(){{
         addAll(APP_LAUNCH_WHITE_LIST);
@@ -179,11 +180,16 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
 //                Log.e(TAG, "app存活");
             }
         }, 0, 1, TimeUnit.SECONDS);
+        defaultInstance = new WeakReference<>(this);
         Log.i(TAG, "input injection backend=" + inputManager.getClass().getName());
     }
 
     public static HashSet<String> getAppLaunchWhiteSet(){
         return CURRENT_APP_LAUNCH_WHITE_LIST;
+    }
+
+    public static RootInputBridgeService getInstance(){
+        return defaultInstance.get();
     }
 
     @Override
@@ -1145,7 +1151,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
         return setIgnoreOrientationRequestMethod;
     }
 
-    private Method getFocusTopTaskMethod() throws ReflectiveOperationException {
+    public Method getFocusTopTaskMethod() throws ReflectiveOperationException {
         if (focusTopTaskMethod == null) {
             focusTopTaskMethod = getActivityTaskManagerService().getClass()
                     .getMethod("focusTopTask", int.class);
@@ -1155,7 +1161,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
     }
 
 
-    private Object getActivityTaskManagerService() throws ReflectiveOperationException {
+    public Object getActivityTaskManagerService() throws ReflectiveOperationException {
         if (activityTaskManagerService == null) {
             activityTaskManagerService = RootActivityManagerCompat.getTaskService();
         }
@@ -1450,7 +1456,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
         return cause.getClass().getSimpleName() + ": " + message;
     }
 
-    private synchronized ShellCommandResult run(String command, int timeoutSeconds){
+    public synchronized ShellCommandResult run(String command, int timeoutSeconds){
         Log.d(TAG + "SHIZUKU_TEST",
                 "D: ShellCommandResult run |" + command + "| " + SystemClock.uptimeMillis());
         if (!ensureStarted()) {
