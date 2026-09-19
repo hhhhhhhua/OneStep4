@@ -493,7 +493,7 @@ public final class SettingsPanelController {
         LinearLayout.LayoutParams primaryHomeEnhancementLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(104));
         primaryHomeEnhancementLp.topMargin = dp(12);
-        list.addView(primaryHomeEnhancementItem, primaryHomeEnhancementLp);
+//        list.addView(primaryHomeEnhancementItem, primaryHomeEnhancementLp);
 
         LinearLayout topAppListItem = createSettingsItem(
                 "应用列表显示", getTopAppListLabel());

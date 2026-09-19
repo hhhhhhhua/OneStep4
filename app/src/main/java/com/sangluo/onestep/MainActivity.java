@@ -137,6 +137,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -1458,11 +1459,19 @@ public class MainActivity extends Activity {
     }
 
     private void dispatchPhysicalLandscapeRotationToHostedDisplays(int targetRotation) {
-        for(EmbeddedAppHost embeddedHost : embeddedHosts){
-            RootVirtualDisplayHost rootVirtualDisplayHost = (RootVirtualDisplayHost)embeddedHost;
-            int displayId = rootVirtualDisplayHost.getDisplayId();
-            rootVirtualDisplayHost.requestSensorLandscapeRotationAsync(targetRotation, "physical device landscape changed");
+        Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(OneStepApplication.getContext());
+        if (hdmiDisplayId != null){
+            String cmd = String.format(Locale.US, "wm user-rotation -d %d lock %d",
+                    hdmiDisplayId, targetRotation);
+            persistentRootShell.run(cmd);
+        }else{
+            for(EmbeddedAppHost embeddedHost : embeddedHosts){
+                RootVirtualDisplayHost rootVirtualDisplayHost = (RootVirtualDisplayHost)embeddedHost;
+                int displayId = rootVirtualDisplayHost.getDisplayId();
+                rootVirtualDisplayHost.requestSensorLandscapeRotationAsync(targetRotation, "physical device landscape changed");
+            }
         }
+
     }
 
     private void refreshAllHostedSensorLandscapeRotations() {
