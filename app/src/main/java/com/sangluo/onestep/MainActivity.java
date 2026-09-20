@@ -46,6 +46,8 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.UserHandle;
 import android.os.UserManager;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.provider.Settings;
 import android.provider.MediaStore;
 import android.text.TextUtils;
@@ -122,6 +124,7 @@ import com.sangluo.onestep.utils.DeviceUtil;
 import com.sangluo.onestep.utils.ExtDisplayUtil;
 import com.sangluo.onestep.utils.ShizukuServiceUtil;
 import com.sangluo.onestep.utils.SysServiceObjUtil;
+import com.sangluo.onestep.view.EdgeBackIndicatorView;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -713,11 +716,43 @@ public class MainActivity extends Activity {
     private FrameLayout cornerTriggerPreviewLayer;
     private View leftCornerTriggerPreview;
     private View rightCornerTriggerPreview;
+    // Edge-swipe-back (native-like) on the main pane, in and outside OneStep mode.
+    private static final int EDGE_BACK_TRIGGER_WIDTH_DP = 18;
+    private static final int EDGE_BACK_MIN_TRIGGER_DP = 24;
+    private static final int EDGE_BACK_MAX_DISTANCE_DP = 120;
+    private static final float EDGE_BACK_COMMIT_RATIO = 0.25f;
+    // Dragging into the last quarter of the bar (red tip) kills the hosted app
+    // instead of sending back when released.
+    private static final float EDGE_BACK_KILL_RATIO = 0.75f;
+    // A short but fast inward flick commits even below the distance threshold.
+    private static final int EDGE_BACK_FLING_VELOCITY_DP = 700;
+    private static final float EDGE_BACK_BAND_START_RATIO = 0.32f;
+    private static final float EDGE_BACK_BAND_END_RATIO = 0.95f;
+    private EdgeBackIndicatorView edgeBackIndicator;
+    private boolean edgeBackTracking;
+    private boolean edgeBackActive;
+    private boolean edgeBackFromLeft;
+    private float edgeBackDownX;
+    private float edgeBackDownY;
+    private float edgeBackLastMoveX;
+    private long edgeBackLastMoveUptime;
+    private boolean edgeBackCommitHaptic;
+    private boolean edgeBackKillHaptic;
+    private final int[] edgeBackRootLocation = new int[2];
     public volatile int activeMainSlot;
     private int firstMainSlot;
     private int secondMainSlot = -1;
     private boolean dualMainLayout;
     private boolean mainPanesSwapped;
+    // One-shot: the next main-slot promotion keeps the side strip on its current
+    // screen edge; consumed (and always cleared) by completeMainSlotSwitch.
+    private boolean mainSlotSwitchKeepSideEdge;
+    // A red-zone kill can re-promote the main slot through whichever async path
+    // wins first (built-in desktop takeover, our own side promote, cascades). Until
+    // this uptime deadline, no promotion is allowed to move the side strip to the
+    // opposite screen edge. Sized to cover the dismiss animation + takeover.
+    private static final long KILL_KEEP_EDGE_WINDOW_MS = 1200L;
+    private long edgeKillKeepEdgeUntilUptime;
     private HostedDisplayRotationController hostedDisplayRotationController;
     private boolean mainOnLeft = true;
     private boolean multiWindowMode;
@@ -1027,10 +1062,34 @@ public class MainActivity extends Activity {
             return false;
         }
         int action = event.getActionMasked();
+        // Defensive recovery: a committed edge-back gesture only clears on UP/CANCEL.
+        // If that event is ever lost (interrupted stream) a fresh DOWN must reset the
+        // state, otherwise every later touch would be swallowed and the screen would
+        // appear permanently unresponsive.
+        if (action == MotionEvent.ACTION_DOWN && (edgeBackActive || edgeBackTracking)) {
+            if (edgeBackActive) {
+                edgeBackActive = false;
+                hideEdgeBackIndicator();
+            }
+            edgeBackTracking = false;
+        }
+        if (edgeBackActive) {
+            if (action == MotionEvent.ACTION_MOVE) {
+                edgeBackLastMoveX = event.getRawX();
+                edgeBackLastMoveUptime = event.getEventTime();
+                updateEdgeBackProgress(event.getRawX(), event.getRawY());
+            } else if (action == MotionEvent.ACTION_UP) {
+                finishEdgeBack(event, true);
+            } else if (action == MotionEvent.ACTION_CANCEL) {
+                finishEdgeBack(event, false);
+            }
+            return true;
+        }
         if (action == MotionEvent.ACTION_DOWN) {
             cornerTriggerTracking = false;
             cornerTriggerConsumed = false;
             cornerTriggerExit = false;
+            edgeBackTracking = false;
             Boolean fromLeft = resolveCornerTriggerSide(event.getRawX(), event.getRawY());
             if (fromLeft != null) {
                 cornerTriggerTracking = true;
@@ -1038,6 +1097,17 @@ public class MainActivity extends Activity {
                 cornerTriggerExit = multiWindowMode;
                 cornerTriggerDownX = event.getRawX();
                 cornerTriggerDownY = event.getRawY();
+            } else {
+                Boolean edgeSide = resolveEdgeBackSide(event.getRawX(), event.getRawY());
+                if (edgeSide != null) {
+                    edgeBackTracking = true;
+                    edgeBackFromLeft = edgeSide;
+                    edgeBackDownX = event.getRawX();
+                    edgeBackDownY = event.getRawY();
+                } else if (multiWindowMode || nearMainPaneEdge(event.getRawX())) {
+                    Log.d(TAG, "edgeBack: down not matched raw=("
+                            + event.getRawX() + "," + event.getRawY() + ")");
+                }
             }
         } else if (cornerTriggerConsumed) {
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
@@ -1071,8 +1141,340 @@ public class MainActivity extends Activity {
                     || action == MotionEvent.ACTION_CANCEL) {
                 cornerTriggerTracking = false;
             }
+        } else if (edgeBackTracking) {
+            if (action == MotionEvent.ACTION_POINTER_DOWN) {
+                edgeBackTracking = false;
+            } else if (action == MotionEvent.ACTION_MOVE) {
+                float dx = event.getRawX() - edgeBackDownX;
+                float dy = event.getRawY() - edgeBackDownY;
+                float inward = edgeBackFromLeft ? dx : -dx;
+                if (inward >= dp(EDGE_BACK_MIN_TRIGGER_DP) && inward >= Math.abs(dy)) {
+                    Log.d(TAG, "edgeBack: activate inward=" + inward
+                            + " min=" + dp(EDGE_BACK_MIN_TRIGGER_DP));
+                    edgeBackTracking = false;
+                    edgeBackActive = true;
+                    edgeBackCommitHaptic = false;
+                    edgeBackKillHaptic = false;
+                    edgeBackLastMoveX = event.getRawX();
+                    edgeBackLastMoveUptime = event.getEventTime();
+                    MotionEvent cancelEvent = MotionEvent.obtain(event);
+                    try {
+                        cancelEvent.setAction(MotionEvent.ACTION_CANCEL);
+                        super.dispatchTouchEvent(cancelEvent);
+                    } finally {
+                        cancelEvent.recycle();
+                    }
+                    if (rootContainer != null) {
+                        showEdgeBackIndicator();
+                    }
+                    updateEdgeBackProgress(event.getRawX(), event.getRawY());
+                    return true;
+                }
+            } else if (action == MotionEvent.ACTION_UP
+                    || action == MotionEvent.ACTION_CANCEL) {
+                edgeBackTracking = false;
+            }
         }
         return super.dispatchTouchEvent(event);
+    }
+
+    private Boolean resolveEdgeBackSide(float rawX, float rawY) {
+        // Trigger on the active main pane's own edges, in and outside OneStep mode:
+        // inside OneStep one pane edge usually sits next to the slot strip, while
+        // outside OneStep the pane fills the whole screen.
+        Rect pane = getMainPaneScreenRect();
+        if (pane == null || pane.width() <= 0 || pane.height() <= 0
+                || rawX < 0 || rawY < 0) {
+            Log.d(TAG, "edgeBack: down raw=(" + rawX + "," + rawY + ") pane=" + pane);
+            return null;
+        }
+        int edge = dp(EDGE_BACK_TRIGGER_WIDTH_DP);
+        // Stay within +/- edge of the pane border itself; a plain "<=" would also
+        // match touches far away on the slot strip on the other side of it.
+        boolean left = Math.abs(rawX - pane.left) <= edge;
+        boolean right = Math.abs(rawX - pane.right) <= edge;
+        if (!left && !right) {
+            return null;
+        }
+        float bandTop = pane.top + pane.height() * EDGE_BACK_BAND_START_RATIO;
+        float bandBottom = pane.top + pane.height() * EDGE_BACK_BAND_END_RATIO;
+        if (rawY < bandTop || rawY > bandBottom) {
+            return null;
+        }
+        Log.d(TAG, "edgeBack: down matched side=" + (left ? "left" : "right")
+                + " raw=(" + rawX + "," + rawY + ") pane=" + pane);
+        return left;
+    }
+
+    private boolean nearMainPaneEdge(float rawX) {
+        Rect pane = getMainPaneScreenRect();
+        if (pane == null) {
+            return false;
+        }
+        int slack = dp(EDGE_BACK_TRIGGER_WIDTH_DP) * 2;
+        return Math.abs(rawX - pane.left) <= slack || Math.abs(rawX - pane.right) <= slack;
+    }
+
+    private Rect getMainPaneScreenRect() {
+        if (activeMainSlot < 0 || activeMainSlot >= windowViews.length) {
+            return null;
+        }
+        OneStepWindowView paneView = windowViews[activeMainSlot];
+        if (paneView == null || paneView.getWidth() <= 0 || paneView.getHeight() <= 0) {
+            return null;
+        }
+        int[] location = new int[2];
+        paneView.getLocationOnScreen(location);
+        return new Rect(location[0], location[1],
+                location[0] + paneView.getWidth(), location[1] + paneView.getHeight());
+    }
+
+    /**
+     * Adds the indicator surface to the root overlay only for the duration of one
+     * gesture, aligned to the main pane edge the swipe started from.
+     */
+    private void showEdgeBackIndicator() {
+        if (rootContainer == null) {
+            return;
+        }
+        Rect pane = getMainPaneScreenRect();
+        if (pane == null) {
+            return;
+        }
+        rootContainer.getLocationOnScreen(edgeBackRootLocation);
+        if (edgeBackIndicator == null) {
+            edgeBackIndicator = new EdgeBackIndicatorView(this);
+        }
+        if (edgeBackIndicator.getParent() == null) {
+            rootContainer.addView(edgeBackIndicator, matchFrame());
+        }
+        float edgeX = (edgeBackFromLeft ? pane.left : pane.right)
+                - edgeBackRootLocation[0];
+        Log.d(TAG, "edgeBack: show indicator fromLeft=" + edgeBackFromLeft
+                + " edgeX=" + edgeX + " overlay="
+                + rootContainer.getWidth() + "x" + rootContainer.getHeight());
+        edgeBackIndicator.begin(edgeBackFromLeft,
+                rootContainer.getWidth(), rootContainer.getHeight(), edgeX);
+    }
+
+    private float edgeBackInward(float rawX) {
+        float dx = rawX - edgeBackDownX;
+        return edgeBackFromLeft ? dx : -dx;
+    }
+
+    private void updateEdgeBackProgress(float rawX, float rawY) {
+        if (edgeBackIndicator == null) {
+            return;
+        }
+        float max = Math.max(1f, dp(EDGE_BACK_MAX_DISTANCE_DP));
+        edgeBackIndicator.setAnchorY(rawY - edgeBackRootLocation[1]);
+        float progress = edgeBackInward(rawX) / max;
+        edgeBackIndicator.setProgress(progress);
+        // Buzz every time the drag crosses the back-commit point; retreating below
+        // the line re-arms it so approaching again vibrates once more.
+        if (progress >= EDGE_BACK_COMMIT_RATIO) {
+            if (!edgeBackCommitHaptic) {
+                edgeBackCommitHaptic = true;
+                vibrateEdgeBackCommit();
+            }
+        } else {
+            edgeBackCommitHaptic = false;
+        }
+        // Separate warning for entering the red kill zone.
+        if (progress >= EDGE_BACK_KILL_RATIO) {
+            if (!edgeBackKillHaptic) {
+                edgeBackKillHaptic = true;
+                vibrateEdgeBackKill();
+            }
+        } else {
+            edgeBackKillHaptic = false;
+        }
+    }
+
+    private void vibrateEdgeBackKill() {
+        try {
+            Vibrator vibrator = getSystemService(Vibrator.class);
+            if (vibrator == null || !vibrator.hasVibrator()) {
+                return;
+            }
+            vibrator.vibrate(VibrationEffect.createOneShot(
+                    30, VibrationEffect.DEFAULT_AMPLITUDE));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "edgeBack: kill vibration failed", e);
+        }
+    }
+
+    private void vibrateEdgeBackCommit() {
+        try {
+            Vibrator vibrator = getSystemService(Vibrator.class);
+            if (vibrator == null || !vibrator.hasVibrator()) {
+                return;
+            }
+            vibrator.vibrate(VibrationEffect.createOneShot(
+                    16, VibrationEffect.DEFAULT_AMPLITUDE));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "edgeBack: commit vibration failed", e);
+        }
+    }
+
+    private void finishEdgeBack(MotionEvent event, boolean allowCommit) {
+        edgeBackActive = false;
+        edgeBackTracking = false;
+        boolean commit = false;
+        boolean kill = false;
+        if (allowCommit) {
+            float max = Math.max(1f, dp(EDGE_BACK_MAX_DISTANCE_DP));
+            float ratio = edgeBackInward(event.getRawX()) / max;
+            // Manual inward velocity from the last MOVE sample; MotionEvent's
+            // velocity getters resolve unreliably against this project's compile jars.
+            long deltaMillis = Math.max(1L,
+                    event.getEventTime() - edgeBackLastMoveUptime);
+            float velocityPx = (event.getRawX() - edgeBackLastMoveX) * 1000f / deltaMillis;
+            float velocity = edgeBackFromLeft ? velocityPx : -velocityPx;
+            kill = ratio >= EDGE_BACK_KILL_RATIO;
+            commit = kill
+                    || ratio >= EDGE_BACK_COMMIT_RATIO
+                    || velocity >= dp(EDGE_BACK_FLING_VELOCITY_DP);
+            Log.d(TAG, "edgeBack: finish ratio=" + ratio + " velocity=" + velocity
+                    + " commit=" + commit + " kill=" + kill);
+            // Fling commits may never cross the distance line while dragging.
+            if (commit && !edgeBackCommitHaptic) {
+                edgeBackCommitHaptic = true;
+                vibrateEdgeBackCommit();
+            }
+        }
+        hideEdgeBackIndicator();
+        if (kill) {
+            dispatchKillEdgeBackToMainPane();
+        } else if (commit) {
+            dispatchEdgeBackToMainPane();
+        }
+    }
+
+    private void dispatchEdgeBackToMainPane() {
+        if (activeMainSlot < 0 || activeMainSlot >= embeddedHosts.length) {
+            return;
+        }
+        EmbeddedAppHost host = embeddedHosts[activeMainSlot];
+        if (host != null) {
+            host.sendBack();
+        }
+    }
+
+    private void dispatchKillEdgeBackToMainPane() {
+        if (activeMainSlot < 0 || activeMainSlot >= embeddedHosts.length) {
+            return;
+        }
+        // Nothing to kill on a desktop/settings main pane, and their dismiss
+        // branches are built for side windows; don't slide the main slot out.
+        // isDisplayedMainDesktopSlot also covers a real launcher desktop APP
+        // (isHomeEntry) sitting in the main pane, not just the OneStep home
+        // overlay: killing that would pull the desktop up and switch slots, so
+        // treat a desktop main pane as a no-op here.
+        if (isDisplayedMainDesktopSlot(activeMainSlot) || isInternalSettingsSlot(activeMainSlot)) {
+            return;
+        }
+        // Freeze the side-strip edge now: the kill may cascade into one or more
+        // main-slot re-promotions below the settle window, none of which should
+        // make the slot list jump to the other side.
+        edgeKillKeepEdgeUntilUptime = SystemClock.uptimeMillis() + KILL_KEEP_EDGE_WINDOW_MS;
+        // Reuse the slot-list swipe-to-dismiss pipeline: closing flag,
+        // slide-out animation, task removal + force-stop via closeApp, and the
+        // post-animation slot cleanup/repaint. allowMainPane lets it act on the
+        // active main slot; HOME/desktop/settings slots get their own branches.
+        final int slot = activeMainSlot;
+        dismissAppWindow(slot, true, () -> {
+            if (activityDestroyed) {
+                return;
+            }
+            Log.d(TAG, "edgeBack: kill completion emptied=" + slot
+                    + " activeMain=" + activeMainSlot
+                    + " desktopSlot=" + findDesktopAppSlot());
+            // A swipe-kill must never promote an unrelated side window over the
+            // main pane (that was the "desktop shows, then it jumps to another
+            // app" bug). If the takeover already moved the main pane elsewhere,
+            // leave it alone.
+            if (activeMainSlot != slot) {
+                return;
+            }
+            // The killed slot is still the (now empty) main pane. When the desktop
+            // already lives in another slot, REUSE it by promoting that slot: the
+            // system exposes a single HOME instance, so starting a second desktop
+            // here would strip the existing slot's live surface and render it black
+            // (the reported "other slot went black"). Keep the side strip in place.
+            int desktopSlot = findDesktopAppSlot();
+            if (desktopSlot >= 0 && desktopSlot != slot) {
+                mainSlotSwitchKeepSideEdge = true;
+                Log.d(TAG, "edgeBack: kill reuse existing desktop slot=" + desktopSlot
+                        + " emptied=" + slot);
+                switchMainSlot(desktopSlot, true);
+                return;
+            }
+            // No desktop anywhere: open one in the killed slot, in place.
+            ensureDesktopAfterKill(slot);
+        });
+    }
+
+    /** Puts the built-in desktop back into an emptied main slot; re-checked once
+     *  later because the async desktop takeover may land after this point and
+     *  leave the slot empty again. */
+    private void ensureDesktopAfterKill(int slot) {
+        if (activityDestroyed || slot < 0 || slot >= MAX_WINDOWS) {
+            return;
+        }
+        if (hasWindowContent(slot)) {
+            // Already refilled (by us or by the takeover path).
+            return;
+        }
+        LauncherApp desktopApp = resolveBuiltInDesktopApp();
+        if (desktopApp != null) {
+            // Only safe to create one when no other slot already holds the single
+            // HOME instance; a duplicate strips the existing slot's surface (black).
+            if (isDesktopHeldInOtherSlot(desktopApp, slot)) {
+                return;
+            }
+            startAppInSlot(slot, desktopApp);
+            return;
+        }
+        // OneStep-drawers can only re-evaluate a desktop choice on a later
+        // attempt; if the main slot is still empty then, try once more.
+        windowViews[slot].postDelayed(() -> {
+            if (activityDestroyed || slot != activeMainSlot
+                    || hasWindowContent(slot) || embeddedSlotClosing[slot]) {
+                return;
+            }
+            LauncherApp retry = resolveBuiltInDesktopApp();
+            if (retry != null && !isDesktopHeldInOtherSlot(retry, slot)) {
+                startAppInSlot(slot, retry);
+            }
+        }, KILL_KEEP_EDGE_WINDOW_MS / 2L);
+    }
+
+    /**
+     * True when the built-in desktop already lives in a slot other than
+     * {@code slot}. Starting a second instance would hand the single system HOME
+     * task to the new slot and strip the old one's live surface, blacking it out.
+     */
+    private boolean isDesktopHeldInOtherSlot(LauncherApp desktopApp, int slot) {
+        if (desktopApp == null || desktopApp.componentName == null) {
+            return false;
+        }
+        int existing = findSlotByComponent(desktopApp.componentName);
+        return existing >= 0 && existing != slot;
+    }
+
+    private void hideEdgeBackIndicator() {
+        if (edgeBackIndicator == null) {
+            return;
+        }
+        final EdgeBackIndicatorView indicator = edgeBackIndicator;
+        edgeBackIndicator = null;
+        indicator.clearNow();
+        indicator.release();
+        ViewParent parent = indicator.getParent();
+        if (parent instanceof ViewGroup) {
+            ((ViewGroup) parent).removeView(indicator);
+        }
     }
 
     /**
@@ -3072,6 +3474,8 @@ public class MainActivity extends Activity {
                 Gravity.END | Gravity.TOP);
         root.addView(leftCornerTrigger, leftLp);
         root.addView(rightCornerTrigger, rightLp);
+        // The edge-back indicator is added lazily while a gesture is active so it
+        // never participates in slot layout passes otherwise.
         updateCornerTriggerBounds();
         updateCornerTriggers();
     }
@@ -5016,6 +5420,20 @@ public class MainActivity extends Activity {
             }
         }
         return -1;
+    }
+
+    /**
+     * Slot whose bound content is the built-in desktop (HOME), or -1 when no
+     * slot currently holds the desktop app. Looks at the slot bindings rather
+     * than the rendered home view so it also detects a desktop parked in a
+     * side slot that never draws its home surface.
+     */
+    private int findDesktopAppSlot() {
+        LauncherApp desktopApp = resolveBuiltInDesktopApp();
+        if (desktopApp == null || desktopApp.componentName == null) {
+            return -1;
+        }
+        return findSlotByComponent(desktopApp.componentName);
     }
 
     private boolean isDisplayedMainDesktopSlot(int slot) {
@@ -7373,6 +7791,9 @@ public class MainActivity extends Activity {
         LauncherApp primaryDesktop = resolveBuiltInDesktopApp();
         int existingPrimaryDesktopSlot = primaryDesktop == null
                 ? -1 : findSlotByComponent(primaryDesktop.componentName);
+        Log.d(TAG, "edgeBack: takeover entered slot=" + slot
+                + " existingDesktopSlot=" + existingPrimaryDesktopSlot
+                + " killWindow=" + (SystemClock.uptimeMillis() < edgeKillKeepEdgeUntilUptime));
         final int takeoverGeneration = ++desktopTakeoverGeneration;
         desktopHomeRequestPending = false;
         suppressEmbeddedStarts = false;
@@ -7449,6 +7870,10 @@ public class MainActivity extends Activity {
         Log.i(TAG, "Move verified built-in desktop main interface to main slot after app "
                 + "exited: desktopSlot=" + desktopSlot
                 + ", exitedSlot=" + exitedSlot + ", app=" + exitedApp.packageName);
+        // Refilling the main pane with the desktop is a system-driven takeover, not
+        // the user enlarging a specific window, so keep the side strip where it is
+        // instead of jumping it to the opposite edge.
+        mainSlotSwitchKeepSideEdge = true;
         switchMainSlot(desktopSlot, true);
         mainHandler.post(() -> finishExitedSlotCleanupAfterDesktopPromotion(
                 generation, exitedSlot, exitedApp, primaryDesktop, desktopSlot,
@@ -7952,6 +8377,17 @@ public class MainActivity extends Activity {
     }
 
     private void switchMainSlot(int newMainSlot, boolean animate) {
+        // TEMP diagnostics: identify every main-slot switch that happens while a
+        // swipe-kill is settling so the unwanted 1->2 promotion can be traced.
+        if (SystemClock.uptimeMillis() < edgeKillKeepEdgeUntilUptime) {
+            StackTraceElement[] st = new Throwable().getStackTrace();
+            StringBuilder sb = new StringBuilder();
+            for (int i = 1; i < Math.min(st.length, 6); i++) {
+                sb.append(st[i].getMethodName()).append('<');
+            }
+            Log.d(TAG, "edgeBack: switchMainSlot " + activeMainSlot + "->" + newMainSlot
+                    + " via " + sb);
+        }
         if (newMainSlot >= 0 && newMainSlot < MAX_WINDOWS
                 && newMainSlot != activeMainSlot && isMainPaneSlot(newMainSlot)) {
             activateMainPane(newMainSlot, true);
@@ -7961,11 +8397,13 @@ public class MainActivity extends Activity {
                 || newMainSlot == activeMainSlot || embeddedSlotClosing[newMainSlot]
                 || isWindowAnimationRunning() || mainSlotSwitchPendingSlot >= 0
                 || mainContentReplacementPendingSlot >= 0) {
+            mainSlotSwitchKeepSideEdge = false;
             return;
         }
         int oldMainSlot = activeMainSlot;
         int sideIndex = sideSlotOrder.indexOf(newMainSlot);
         if (sideIndex < 0) {
+            mainSlotSwitchKeepSideEdge = false;
             return;
         }
         if (mainSlotSwitchPendingSlot == newMainSlot
@@ -8020,6 +8458,9 @@ public class MainActivity extends Activity {
             }
         };
         Runnable performSwitch = () -> {
+            // Consume the one-shot keep-edge flag here so aborted switches
+            // can never leak it into a later user-initiated promotion.
+            boolean keepSideEdge = consumeMainSlotSwitchKeepSideEdge();
             if (switchGeneration != mainSlotSwitchGeneration
                     || activeMainSlot != oldMainSlot) {
                 clearPendingMainPromotionContent(newMainSlot);
@@ -8027,7 +8468,8 @@ public class MainActivity extends Activity {
                 scheduleDeferredWindowSwitchWorkFlush();
                 return;
             }
-            if (!completeMainSlotSwitch(oldMainSlot, newMainSlot, animate, transferFocus)) {
+            if (!completeMainSlotSwitch(oldMainSlot, newMainSlot, animate, transferFocus,
+                    keepSideEdge)) {
                 clearPendingMainPromotionContent(newMainSlot);
                 clearPendingMainSlotSwitch();
                 scheduleDeferredWindowSwitchWorkFlush();
@@ -8142,8 +8584,19 @@ public class MainActivity extends Activity {
         Toast.makeText(this, userMessage, Toast.LENGTH_SHORT).show();
     }
 
+    private boolean consumeMainSlotSwitchKeepSideEdge() {
+        boolean keep = mainSlotSwitchKeepSideEdge;
+        mainSlotSwitchKeepSideEdge = false;
+        return keep;
+    }
+
     private boolean completeMainSlotSwitch(int oldMainSlot, int newMainSlot, boolean animate,
                                            Runnable onLayoutSettled) {
+        return completeMainSlotSwitch(oldMainSlot, newMainSlot, animate, onLayoutSettled, false);
+    }
+
+    private boolean completeMainSlotSwitch(int oldMainSlot, int newMainSlot, boolean animate,
+                                           Runnable onLayoutSettled, boolean keepSideEdge) {
         if (activityDestroyed || suppressEmbeddedStarts || exitOneStepPending
                 || activeMainSlot != oldMainSlot
                 || newMainSlot < 0 || newMainSlot >= MAX_WINDOWS
@@ -8177,7 +8630,11 @@ public class MainActivity extends Activity {
         if (newHost instanceof RootVirtualDisplayHost) {
             ((RootVirtualDisplayHost) newHost).syncLaunchRoutingSource();
         }
-        if (!dualMainLayout) {
+        // Whichever promotion path wins the race after a kill, honor the freeze
+        // window so the slot list never jumps to the opposite edge.
+        boolean keepEdge = keepSideEdge
+                || SystemClock.uptimeMillis() < edgeKillKeepEdgeUntilUptime;
+        if (!dualMainLayout && !keepEdge) {
             mainOnLeft = !mainOnLeft;
         }
         updateTopNavigationControls();
