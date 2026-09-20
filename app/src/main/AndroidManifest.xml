@@ -63,7 +63,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="OneStep 系统框架显示增强后端" />
+            android:value="OneStep 外接屏幕增强模块" />
         <meta-data
             android:name="xposedminversion"
             android:value="93" />
@@ -85,7 +85,7 @@
             android:configChanges="density|fontScale|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
+<!--                <category android:name="android.intent.category.HOME" />-->
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
@@ -138,9 +138,9 @@
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
         <provider
             android:name="com.sangluo.onestep.SharedPerfsProvider"
-            android:authorities="com.sangluo.onestep.prefs"
+            android:authorities="${applicationId}.prefs"
             android:exported="true"
-            android:readPermission="com.sangluo.onestep.READ_SETTINGS">
+            android:readPermission="com.enhancemirror.READ_SETTINGS">
         </provider>
         <service
             android:name=".feature.drag.ImageDragBridgeService"

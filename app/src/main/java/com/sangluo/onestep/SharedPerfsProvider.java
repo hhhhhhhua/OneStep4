@@ -9,7 +9,10 @@ public class SharedPerfsProvider extends RemotePreferenceProvider {
     private static final int SYSTEM_UID = 1000;
 
     public SharedPerfsProvider() {
-        super("com.sangluo.onestep.prefs", new String[] {"enhance_mirror_prefs"});
+        super(
+                "com.sangluo.onestepc16.prefs",
+                new String[] {"enhance_mirror_prefs"}
+        );
     }
 
 }

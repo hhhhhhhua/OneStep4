@@ -1,9 +1,13 @@
 package com.sangluo.onestep.hook.displayhooks;
 
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
+import android.os.UserHandle;
 import android.util.Log;
 import android.view.KeyEvent;
 
@@ -12,8 +16,9 @@ import com.sangluo.onestep.utils.SysServiceObjUtil;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
@@ -23,10 +28,39 @@ public class DisplayServiceHook {
     private static final String TAG = "OneStep4 LSP DisplayServiceHook";
     private static boolean HDMI_CONNECTED = false;
 
+    private static volatile boolean installed;
+
+    private static HandlerThread sHdmiThread;
+    private static Handler sHdmiHandler;
+
+    private static void initHdmiHandler() {
+        if (sHdmiThread != null) {
+            return;
+        }
+
+        synchronized (DisplayServiceHook.class) {
+            if (sHdmiThread == null) {
+                sHdmiThread = new HandlerThread("OneStep-HDMI");
+                sHdmiThread.start();
+                sHdmiHandler = new Handler(sHdmiThread.getLooper());
+            }
+        }
+    }
+
+    public static Handler getsHdmiHandler(){
+        return sHdmiHandler;
+    }
+
     public static void hook(XC_LoadPackage.LoadPackageParam lpparam) {
+        if (installed) {
+            return;
+        }
+        initHdmiHandler();
+
         hookLogicalDisplayMapper(lpparam);
         hookDisplayDeviceRepository(lpparam);
         hookInputManagerService(lpparam);
+        installed = true;
     }
 
     /**
@@ -68,23 +102,39 @@ public class DisplayServiceHook {
                             return;
                         }
 
-                        Context context = SysServiceObjUtil.getCurrentContext();
-                        PackageManager packageManager = context.getPackageManager();
-                        Intent intent = packageManager.getLaunchIntentForPackage(SharedConfig.START_SOFT_WARE_PACKAGE);
-                        context.startActivity(intent);
+                        sHdmiHandler.post(() -> {
+                            try {
+                                Log.d(TAG, "开始处理 HDMI 后续操作");
 
-                        // 禁用HDMI音频
-                        if (SharedConfig.ENABLE_DISABLE_AUDIO) {
-                            Log.d(TAG, "禁用HDMI音频, 延时600ms执行");
-                            new Thread(() -> {
-                                try {
-                                    Thread.sleep(600);
-                                    manageAudioService(lpparam, 0);
-                                } catch (InterruptedException e) {
-                                    Log.e(TAG, "[!] 延时执行被中断: " + e);
+                                Context context = SysServiceObjUtil.getCurrentContext();
+                                PackageManager packageManager = context.getPackageManager();
+                                Intent intent = packageManager.getLaunchIntentForPackage(SharedConfig.START_SOFT_WARE_PACKAGE);
+                                context.startActivity(intent);
+                                SharedConfig.loadConfig();
+
+                                // 手机息屏
+                                if (SharedConfig.ENABLE_DISPLAY_CONTROL) {
+                                    powerControl(lpparam, 0);
                                 }
-                            }).start();
-                        }
+
+                                // 音频操作再单独延迟
+                                if (SharedConfig.ENABLE_DISABLE_AUDIO) {
+                                    sHdmiHandler.postDelayed(() -> {
+                                        try {
+                                            Log.d(TAG, "执行 HDMI 音频处理");
+                                            manageAudioService(lpparam, 0);
+                                        } catch (Throwable e) {
+                                            Log.e(TAG, "manageAudioService failed", e);
+                                        }
+                                    }, 600);
+                                }
+
+                            } catch (Throwable e) {
+                                Log.e(TAG, "HDMI 后处理失败", e);
+                            }
+                        });
+
+
 
                     }
                 }
@@ -101,9 +151,20 @@ public class DisplayServiceHook {
                 new BaseMethodHook() {
                     @Override
                     protected void onAfter(MethodHookParam param) {
-                        Log.d(TAG, "=== handleDisplayDeviceRemoved 被调用 ===");
-                        HDMI_CONNECTED = false;
-                        powerControl(lpparam, 2);
+                        if (!SharedConfig.ENABLED) {
+                            return;
+                        }
+
+                        sHdmiHandler.post(() -> {
+                            try{
+                                forceStopPackage(SharedConfig.START_SOFT_WARE_PACKAGE, 0);
+                                Log.d(TAG, "=== handleDisplayDeviceRemoved 被调用 ===");
+                                HDMI_CONNECTED = false;
+                                powerControl(lpparam, 2);
+                            } catch (Exception e) {
+                                Log.e(TAG, "HDMI handleDisplayDeviceRemoved 后处理失败", e);
+                            }
+                        });
                     }
                 }
             );
@@ -179,9 +240,9 @@ public class DisplayServiceHook {
                 IBinder.class,
                 KeyEvent.class,
                 int.class,
-                new XC_MethodHook() {
+                new BaseMethodHook() {
                     @Override
-                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    protected void onBefore(MethodHookParam param) throws Throwable {
                         if (!HDMI_CONNECTED) {
                             return;
                         }
@@ -315,4 +376,43 @@ public class DisplayServiceHook {
         }
     }
 
+
+    private static void forceStopPackage(String packageName, int userId) {
+        try {
+            Class<?> amClass = Class.forName("android.app.ActivityManager");
+
+            java.lang.reflect.Method getService =
+                    amClass.getDeclaredMethod("getService");
+            getService.setAccessible(true);
+
+            Object service = getService.invoke(null);
+
+            java.lang.reflect.Method method = null;
+
+            for (java.lang.reflect.Method m : service.getClass().getMethods()) {
+                if ("forceStopPackage".equals(m.getName())
+                        && m.getParameterTypes().length == 2
+                        && m.getParameterTypes()[0] == String.class
+                        && m.getParameterTypes()[1] == int.class) {
+                    method = m;
+                    break;
+                }
+            }
+
+            if (method == null) {
+                throw new NoSuchMethodException(
+                        "forceStopPackage(String,int) not found, service="
+                                + service.getClass().getName()
+                );
+            }
+
+            method.setAccessible(true);
+            method.invoke(service, packageName, userId);
+
+            Log.d(TAG, "force stop success: " + packageName);
+
+        } catch (Throwable e) {
+            Log.e(TAG, "force stop failed: " + packageName, e);
+        }
+    }
 }

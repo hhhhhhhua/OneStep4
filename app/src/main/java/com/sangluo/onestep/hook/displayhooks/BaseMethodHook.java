@@ -1,5 +1,7 @@
 package com.sangluo.onestep.hook.displayhooks;
 
+import android.os.Handler;
+
 import com.sangluo.onestep.hook.config.SharedConfig;
 
 import de.robv.android.xposed.XC_MethodHook;
@@ -9,7 +11,8 @@ public abstract class BaseMethodHook extends XC_MethodHook {
     @Override
     protected final void beforeHookedMethod(MethodHookParam param) throws Throwable {
         // 在逻辑执行前，统一加载/刷新配置
-        SharedConfig.loadConfig();
+        Handler handler = DisplayServiceHook.getsHdmiHandler();
+        handler.post(() -> SharedConfig.loadConfig());
 
         // 执行具体的子类逻辑
         onBefore(param);

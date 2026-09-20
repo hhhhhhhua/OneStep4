@@ -22,7 +22,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
@@ -70,6 +72,7 @@ import com.sangluo.onestep.IRootInputBridgeService;
 import com.sangluo.onestep.OneStepApplication;
 import com.sangluo.onestep.R;
 import com.sangluo.onestep.feature.embedding.DefaultHomeRoutingPolicy;
+import com.sangluo.onestep.hook.DisPlayStringConst;
 import com.sangluo.onestep.model.LauncherApp;
 import com.sangluo.onestep.system.root.ZygiskHookConfig;
 import com.sangluo.onestep.ui.widget.AspectRatioImageView;
@@ -377,6 +380,41 @@ public final class SettingsPanelController {
 
     private static final String PREF_WHITE_LIST = "white_list";
 
+    // Shared with the hook process: RemotePreferenceProvider (SharedPerfsProvider)
+    // serves this file and SharedConfig.loadConfig() reads the same keys back.
+    private static final String MODULE_PREFS_NAME = "enhance_mirror_prefs";
+
+    private void showModuleSettingsDialog() {
+        final String[] keys = {
+                DisPlayStringConst.POWER_OFF_CONST,
+                DisPlayStringConst.DISABLE_AUDIO_CONST,
+                DisPlayStringConst.DISABLE_KEY_CONST,
+        };
+        final String[] labels = {
+                "投屏时手机息屏",
+                "禁用 HDMI 音频",
+                "禁用系统快捷键",
+        };
+        SharedPreferences prefs = activity.getSharedPreferences(MODULE_PREFS_NAME, MODE_PRIVATE);
+        final boolean[] checked = new boolean[keys.length];
+        for (int index = 0; index < keys.length; index++) {
+            checked[index] = prefs.getBoolean(keys[index], false);
+        }
+        new AlertDialog.Builder(activity)
+                .setTitle("模块设置")
+                .setMultiChoiceItems(labels, checked,
+                        (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", (dialog, which) -> {
+                    SharedPreferences.Editor editor = prefs.edit();
+                    for (int index = 0; index < keys.length; index++) {
+                        editor.putBoolean(keys[index], checked[index]);
+                    }
+                    editor.apply();
+                })
+                .show();
+    }
+
     private void saveWhiteList(String text) {
 
         OneStepApplication.getContext().getSharedPreferences("settings", MODE_PRIVATE)
@@ -462,6 +500,14 @@ public final class SettingsPanelController {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(88));
         builtInDesktopLp.topMargin = dp(12);
         list.addView(builtInDesktopItem, builtInDesktopLp);
+
+        LinearLayout moduleSettingsItem = createSettingsItem(
+                "模块设置", "配置增强模块功能开关", "点击设置");
+        moduleSettingsItem.setOnClickListener(v -> showModuleSettingsDialog());
+        LinearLayout.LayoutParams moduleSettingsLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
+        moduleSettingsLp.topMargin = dp(12);
+        list.addView(moduleSettingsItem, moduleSettingsLp);
 
         LinearLayout systemHomeItem = createSettingsItem(
                 "系统默认桌面", "点击设置");
