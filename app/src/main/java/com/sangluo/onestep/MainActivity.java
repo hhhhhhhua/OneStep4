@@ -717,7 +717,12 @@ public class MainActivity extends Activity {
     private View leftCornerTriggerPreview;
     private View rightCornerTriggerPreview;
     // Edge-swipe-back (native-like) on the main pane, in and outside OneStep mode.
-    private static final int EDGE_BACK_TRIGGER_WIDTH_DP = 18;
+    // Base band, measured inward/outward from the main pane's left/right border,
+    // within which a touch-down starts an edge-swipe-back. Like the corner gesture
+    // it is scaled live by the "corner trigger sensitivity" setting (see
+    // getEdgeBackTriggerWidthPx): higher sensitivity widens the band so the swipe
+    // need not start at the very edge; this value is what 100% sensitivity gives.
+    private static final int EDGE_BACK_TRIGGER_WIDTH_DEFAULT_DP = 30;
     private static final int EDGE_BACK_MIN_TRIGGER_DP = 24;
     private static final int EDGE_BACK_MAX_DISTANCE_DP = 120;
     private static final float EDGE_BACK_COMMIT_RATIO = 0.25f;
@@ -1188,7 +1193,7 @@ public class MainActivity extends Activity {
             Log.d(TAG, "edgeBack: down raw=(" + rawX + "," + rawY + ") pane=" + pane);
             return null;
         }
-        int edge = dp(EDGE_BACK_TRIGGER_WIDTH_DP);
+        int edge = getEdgeBackTriggerWidthPx();
         // Stay within +/- edge of the pane border itself; a plain "<=" would also
         // match touches far away on the slot strip on the other side of it.
         boolean left = Math.abs(rawX - pane.left) <= edge;
@@ -1211,7 +1216,7 @@ public class MainActivity extends Activity {
         if (pane == null) {
             return false;
         }
-        int slack = dp(EDGE_BACK_TRIGGER_WIDTH_DP) * 2;
+        int slack = getEdgeBackTriggerWidthPx() * 2;
         return Math.abs(rawX - pane.left) <= slack || Math.abs(rawX - pane.right) <= slack;
     }
 
@@ -5140,6 +5145,17 @@ public class MainActivity extends Activity {
     private int getCornerTriggerDistancePx() {
         return Math.max(1, Math.round(dp(CORNER_TRIGGER_DISTANCE_DEFAULT_DP)
                 * 100f / Math.max(1, cornerTriggerSensitivityPct)));
+    }
+
+    /**
+     * Edge-swipe-back start band, driven by the same "corner trigger sensitivity"
+     * setting as the corner gesture. Unlike the corner distance (which shrinks as
+     * sensitivity rises), a wider start band is what makes the edge easier to
+     * trigger, so this scales proportionally with the sensitivity percentage.
+     */
+    private int getEdgeBackTriggerWidthPx() {
+        return Math.max(1, Math.round(dp(EDGE_BACK_TRIGGER_WIDTH_DEFAULT_DP)
+                * Math.max(1, cornerTriggerSensitivityPct) / 100f));
     }
 
     private Uri getSelectedBackgroundUri() {

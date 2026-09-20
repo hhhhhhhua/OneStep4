@@ -2277,8 +2277,23 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
 
     private void injectKeyDirectAsync(int keyCode, String description) {
         final int targetDisplayId = displayId;
-        if (!sendKeyThroughDirectBridge(targetDisplayId, keyCode)) {
-            Log.w(TAG, "Direct input bridge unavailable: " + description);
+        // The bridge send is a synchronous binder round-trip and the service
+        // injects keys with WAIT_FOR_FINISH, so calling it inline blocks the UI
+        // thread (the edge-back gesture dispatches here on ACTION_UP) until the
+        // hosted window finishes handling the key - perceived as a delay right
+        // after the finger lifts. Hand it to the single-thread input executor
+        // already used for motion so submission stays ordered but off the UI
+        // thread; fall back inline if that executor is already shut down.
+        try {
+            inputDispatchExecutor.execute(() -> {
+                if (!sendKeyThroughDirectBridge(targetDisplayId, keyCode)) {
+                    Log.w(TAG, "Direct input bridge unavailable: " + description);
+                }
+            });
+        } catch (RuntimeException e) {
+            if (!sendKeyThroughDirectBridge(targetDisplayId, keyCode)) {
+                Log.w(TAG, "Direct input bridge unavailable: " + description);
+            }
         }
     }
 
