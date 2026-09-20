@@ -3474,22 +3474,34 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
         boolean targetDualMainLayout = callbacks.isDualMainLayout();
         boolean leavingDualMainLayout = displayUsesDualMainLayout
                 && !targetDualMainLayout;
+        boolean mainPaneSlot = callbacks.isMainPaneSlot(slot);
+        // A main pane whose own view drifted from the display aspect beyond the 10% tolerance
+        // letterboxes as a bottom black bar. Allow the aspect-correction resize even on layouts
+        // that normally pin the shared device-sized viewport; density stays pinned so the hosted
+        // app is not relaunched.
+        boolean aspectDrivesResize = mainPaneSlot
+                && displayWidth > 0 && displayHeight > 0
+                && VirtualDisplayViewportPolicy.shouldRefreshForTargetAspect(
+                displayWidth, displayHeight, viewWidth, viewHeight);
         if (!forceVirtualDisplayResize
                 && !VirtualDisplayViewportPolicy.shouldResizeForContainerLayout(
-                callbacks.isLargeScreenDevice(), targetDualMainLayout, leavingDualMainLayout)) {
+                callbacks.isLargeScreenDevice(), targetDualMainLayout, leavingDualMainLayout)
+                && !aspectDrivesResize) {
             keepVirtualDisplaySurfaceSize(holder, viewWidth, viewHeight);
             return;
         }
         Rect layoutReferenceRect = getReferenceRenderRect();
         if (!forceVirtualDisplayResize
                 && !hasMatchingAspectRatio(viewWidth, viewHeight,
-                layoutReferenceRect.width(), layoutReferenceRect.height())) {
+                layoutReferenceRect.width(), layoutReferenceRect.height())
+                && !aspectDrivesResize) {
             keepVirtualDisplaySurfaceSize(holder, viewWidth, viewHeight);
             return;
         }
-        VirtualDisplaySpec targetSpec = leavingDualMainLayout
-                && !callbacks.isMultiWindowMode()
-                ? makeWorkspaceVirtualDisplaySpec() : makeTargetVirtualDisplaySpec();
+        VirtualDisplaySpec targetSpec = applyMainPaneAspectCorrection(
+                leavingDualMainLayout
+                        && !callbacks.isMultiWindowMode()
+                        ? makeWorkspaceVirtualDisplaySpec() : makeTargetVirtualDisplaySpec());
         boolean targetAspectMatches = hasMatchingAspectRatio(
                 displayWidth, displayHeight, targetSpec.width, targetSpec.height);
         boolean targetSizeMatches = displayWidth == targetSpec.width
@@ -3531,7 +3543,75 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
     }
 
     private VirtualDisplaySpec makeTargetVirtualDisplaySpec() {
-        return makeVirtualDisplaySpecForRect(getReferenceRenderRect());
+        return applyMainPaneAspectCorrection(
+                makeVirtualDisplaySpecForRect(resolveReferenceRectForSlot()));
+    }
+
+    /**
+     * A freshly opened secondary slot hosts an app that lays out against the device's logical
+     * screen. Reusing the shrunk active-main rect here forces a narrower aspect than the app
+     * paints, so the bottom band is never drawn (the "new second display has a black edge"
+     * symptom). The active main keeps its own frame because its resident app reflows on resize.
+     */
+    private Rect resolveReferenceRectForSlot() {
+        int activeMainSlot = callbacks.activeMainSlot();
+        boolean isActiveMain = activeMainSlot >= 0 && activeMainSlot == slot;
+        if (!isActiveMain) {
+            View workspace = callbacks.workspace();
+            if (workspace != null && workspace.getWidth() > 0 && workspace.getHeight() > 0) {
+                return new Rect(0, 0, workspace.getWidth(), workspace.getHeight());
+            }
+        }
+        return getReferenceRenderRect();
+    }
+
+    private Rect resolveOwnAspectRect() {
+        if (!callbacks.isMainPaneSlot(slot) || embeddedSlotClosing[slot]) {
+            return null;
+        }
+        int viewWidth = surfaceView.getWidth();
+        int viewHeight = surfaceView.getHeight();
+        if (viewWidth <= 0 || viewHeight <= 0) {
+            return null;
+        }
+        return new Rect(0, 0, viewWidth, viewHeight);
+    }
+
+    /**
+     * Keeps a main-pane buffer aligned with its own view aspect. The shared device-resolution
+     * budget is preserved and the density is never touched, so an aspect correction resizes the
+     * display without relaunching the hosted app or oscillating during main/side swaps.
+     */
+    private VirtualDisplaySpec applyMainPaneAspectCorrection(VirtualDisplaySpec baseSpec) {
+        if (baseSpec == null) {
+            return null;
+        }
+        Rect ownRect = resolveOwnAspectRect();
+        if (ownRect == null
+                || !VirtualDisplayViewportPolicy.shouldRefreshForTargetAspect(
+                baseSpec.width, baseSpec.height, ownRect.width(), ownRect.height())) {
+            return baseSpec;
+        }
+        int longEdge = Math.max(baseSpec.width, baseSpec.height);
+        int correctedWidth;
+        int correctedHeight;
+        if (ownRect.width() >= ownRect.height()) {
+            correctedWidth = longEdge;
+            correctedHeight = Math.max(1, Math.round(longEdge
+                    * ownRect.height() / (float) ownRect.width()));
+        } else {
+            correctedHeight = longEdge;
+            correctedWidth = Math.max(1, Math.round(longEdge
+                    * ownRect.width() / (float) ownRect.height()));
+        }
+        float qualityScale = calculateMinimumQualityScale(correctedWidth, correctedHeight);
+        if (qualityScale > 1f) {
+            correctedWidth = Math.max(1, Math.round(correctedWidth * qualityScale));
+            correctedHeight = Math.max(1, Math.round(correctedHeight * qualityScale));
+        }
+        int[] capped = VirtualDisplaySizePolicy.capLongEdge(
+                correctedWidth, correctedHeight, getHostDisplayMaxLongEdge());
+        return new VirtualDisplaySpec(capped[0], capped[1], baseSpec.densityDpi);
     }
 
     private VirtualDisplaySpec makeWorkspaceVirtualDisplaySpec() {
