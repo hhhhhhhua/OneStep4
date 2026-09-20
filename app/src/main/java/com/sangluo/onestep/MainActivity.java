@@ -706,6 +706,7 @@ public class MainActivity extends Activity {
     private boolean cornerTriggerTracking;
     private boolean cornerTriggerFromLeft;
     private boolean cornerTriggerConsumed;
+    private boolean cornerTriggerExit;
     private float cornerTriggerDownX;
     private float cornerTriggerDownY;
     private final int[] cornerTriggerLocationOnScreen = new int[2];
@@ -1029,14 +1030,14 @@ public class MainActivity extends Activity {
         if (action == MotionEvent.ACTION_DOWN) {
             cornerTriggerTracking = false;
             cornerTriggerConsumed = false;
-            if (!multiWindowMode) {
-                View trigger = findCornerTrigger(event.getRawX(), event.getRawY());
-                if (trigger != null) {
-                    cornerTriggerTracking = true;
-                    cornerTriggerFromLeft = trigger == leftCornerTrigger;
-                    cornerTriggerDownX = event.getRawX();
-                    cornerTriggerDownY = event.getRawY();
-                }
+            cornerTriggerExit = false;
+            Boolean fromLeft = resolveCornerTriggerSide(event.getRawX(), event.getRawY());
+            if (fromLeft != null) {
+                cornerTriggerTracking = true;
+                cornerTriggerFromLeft = fromLeft;
+                cornerTriggerExit = multiWindowMode;
+                cornerTriggerDownX = event.getRawX();
+                cornerTriggerDownY = event.getRawY();
             }
         } else if (cornerTriggerConsumed) {
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
@@ -1047,11 +1048,10 @@ public class MainActivity extends Activity {
             if (action == MotionEvent.ACTION_POINTER_DOWN) {
                 cornerTriggerTracking = false;
             } else if (action == MotionEvent.ACTION_MOVE
-                    && CornerTriggerGesturePolicy.matches(
+                    && matchesCornerTriggerGesture(cornerTriggerExit,
                     cornerTriggerFromLeft,
                     event.getRawX() - cornerTriggerDownX,
-                    event.getRawY() - cornerTriggerDownY,
-                    getCornerTriggerDistancePx())) {
+                    event.getRawY() - cornerTriggerDownY)) {
                 cornerTriggerTracking = false;
                 cornerTriggerConsumed = true;
                 MotionEvent cancelEvent = MotionEvent.obtain(event);
@@ -1061,7 +1061,11 @@ public class MainActivity extends Activity {
                 } finally {
                     cancelEvent.recycle();
                 }
-                enterOneStepMode(cornerTriggerFromLeft);
+                if (cornerTriggerExit) {
+                    exitOneStepMode();
+                } else {
+                    enterOneStepMode(cornerTriggerFromLeft);
+                }
                 return true;
             } else if (action == MotionEvent.ACTION_UP
                     || action == MotionEvent.ACTION_CANCEL) {
@@ -1069,6 +1073,45 @@ public class MainActivity extends Activity {
             }
         }
         return super.dispatchTouchEvent(event);
+    }
+
+    /**
+     * Resolves which top corner a down event belongs to. Outside OneStep the
+     * dedicated trigger views are shown and used directly; inside OneStep they
+     * are hidden, so the corner is matched against the raw screen geometry.
+     */
+    private Boolean resolveCornerTriggerSide(float rawX, float rawY) {
+        if (multiWindowMode) {
+            return findExitCornerTriggerSide(rawX, rawY);
+        }
+        View trigger = findCornerTrigger(rawX, rawY);
+        if (trigger == null) {
+            return null;
+        }
+        return trigger == leftCornerTrigger;
+    }
+
+    private Boolean findExitCornerTriggerSide(float rawX, float rawY) {
+        int size = getCornerTriggerSizePx();
+        int width = rootContainer == null ? 0 : rootContainer.getWidth();
+        if (size <= 0 || width <= 0 || rawY < 0 || rawY > size || rawX < 0) {
+            return null;
+        }
+        if (rawX <= size) {
+            return Boolean.TRUE;
+        }
+        if (rawX >= width - size) {
+            return Boolean.FALSE;
+        }
+        return null;
+    }
+
+    private boolean matchesCornerTriggerGesture(boolean exit, boolean fromLeft,
+            float dx, float dy) {
+        int distance = getCornerTriggerDistancePx();
+        return exit
+                ? CornerTriggerGesturePolicy.matchesExit(fromLeft, dx, dy, distance)
+                : CornerTriggerGesturePolicy.matches(fromLeft, dx, dy, distance);
     }
 
     private View findCornerTrigger(float rawX, float rawY) {

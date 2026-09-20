@@ -25,4 +25,17 @@ public class CornerTriggerGesturePolicyTest {
         assertFalse(CornerTriggerGesturePolicy.matches(true, 110f, 500f, 100));
         assertFalse(CornerTriggerGesturePolicy.matches(false, -110f, 500f, 100));
     }
+
+    @Test
+    public void acceptsNaturalOutwardUpwardSwipesFromBothCorners() {
+        assertTrue(CornerTriggerGesturePolicy.matchesExit(true, -120f, -50f, 100));
+        assertTrue(CornerTriggerGesturePolicy.matchesExit(false, 120f, -50f, 100));
+    }
+
+    @Test
+    public void exitRejectsEnterDirectionAndInsufficientMovement() {
+        assertFalse(CornerTriggerGesturePolicy.matchesExit(true, 120f, 50f, 100));
+        assertFalse(CornerTriggerGesturePolicy.matchesExit(true, -90f, -80f, 100));
+        assertFalse(CornerTriggerGesturePolicy.matchesExit(true, -140f, -20f, 100));
+    }
 }
