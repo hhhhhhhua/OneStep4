@@ -1,13 +1,11 @@
 package com.sangluo.onestep.hook.displayhooks;
 
-import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
-import android.os.UserHandle;
 import android.util.Log;
 import android.view.KeyEvent;
 
@@ -16,9 +14,8 @@ import com.sangluo.onestep.utils.SysServiceObjUtil;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
+import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
@@ -60,6 +57,7 @@ public class DisplayServiceHook {
         hookLogicalDisplayMapper(lpparam);
         hookDisplayDeviceRepository(lpparam);
         hookInputManagerService(lpparam);
+        hookInputConfigChange(lpparam);
         installed = true;
     }
 
@@ -413,6 +411,57 @@ public class DisplayServiceHook {
 
         } catch (Throwable e) {
             Log.e(TAG, "force stop failed: " + packageName, e);
+        }
+    }
+
+    /**
+     * 禁用relounch
+     * 注：c16 键盘连接断开会导致像bilibili等app重新加载，没找出规律，故直接返回false
+     * @param lpparam
+     */
+    private static void hookInputConfigChange(XC_LoadPackage.LoadPackageParam lpparam){
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "com.android.server.wm.ActivityRecordExtImpl",
+                    lpparam.classLoader,
+                    "hookShouldRelaunchLocked",
+                    int.class,
+                    int.class,
+                    android.content.res.Configuration.class,
+                    new BaseMethodHook() {
+
+                        @Override
+                        protected void onBefore(MethodHookParam param) throws Throwable {
+                        }
+
+                        @Override
+                        protected void onAfter(MethodHookParam param) throws Throwable {
+                            if (!HDMI_CONNECTED) {
+                                return;
+                            }
+
+                            if (SharedConfig.RE_LAUNCH_FLAG) {
+                                // 对应 Frida:
+                                final Boolean result = (Boolean) param.getResult();
+                                // 对应:
+                                android.content.res.Configuration changesConfig =
+                                        (android.content.res.Configuration) param.args[2];
+                                boolean flag =
+                                        Boolean.TRUE.equals(result)
+                                                && changesConfig != null;
+                                if (flag) {
+                                    Log.i(TAG, "禁用配置更新app重新布局执行成功！");
+                                    param.setResult(false);
+                                }
+                            }
+                        }
+                    }
+            );
+
+            Log.i(TAG, "[+] hookInputConfigChange Hook注册成功");
+
+        } catch (Throwable e) {
+            Log.e(TAG, "Failed to hook hookInputConfigChange", e);
         }
     }
 }

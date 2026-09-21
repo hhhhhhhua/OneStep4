@@ -389,11 +389,13 @@ public final class SettingsPanelController {
                 DisPlayStringConst.POWER_OFF_CONST,
                 DisPlayStringConst.DISABLE_AUDIO_CONST,
                 DisPlayStringConst.DISABLE_KEY_CONST,
+                DisPlayStringConst.RE_LAUNCH_FLAG_CONST,
         };
         final String[] labels = {
                 "投屏时手机息屏",
                 "禁用 HDMI 音频",
                 "禁用系统快捷键",
+                "禁用配置更新app重新布局",
         };
         SharedPreferences prefs = activity.getSharedPreferences(MODULE_PREFS_NAME, MODE_PRIVATE);
         final boolean[] checked = new boolean[keys.length];

@@ -22,6 +22,8 @@ public class SharedConfig {
     public static boolean ENABLE_DISABLE_AUDIO = false;
     // 是否禁用系统快捷键
     public static boolean ENABLE_DISABLE_KEY = false;
+    // 禁用配置更新app重新布局
+    public static boolean RE_LAUNCH_FLAG = false;
     public static String START_SOFT_WARE_PACKAGE = "com.sangluo.onestepc16";
 
     private static final String AUTHORITY = "com.sangluo.onestepc16.prefs";
@@ -45,7 +47,12 @@ public class SharedConfig {
             ENABLE_DISPLAY_CONTROL = prefs.getBoolean(DisPlayStringConst.POWER_OFF_CONST, false);
             ENABLE_DISABLE_AUDIO = prefs.getBoolean(DisPlayStringConst.DISABLE_AUDIO_CONST, false);
             ENABLE_DISABLE_KEY = prefs.getBoolean(DisPlayStringConst.DISABLE_KEY_CONST, false);
-            Log.i(TAG, "loadConfig ENABLED: "+ENABLED+", ENABLE_DISPLAY_CONTROL: "+ENABLE_DISPLAY_CONTROL+", ENABLE_DISABLE_AUDIO: "+ENABLE_DISABLE_AUDIO+", ENABLE_DISABLE_KEY: "+ENABLE_DISABLE_KEY);
+            RE_LAUNCH_FLAG = prefs.getBoolean(DisPlayStringConst.RE_LAUNCH_FLAG_CONST, false);
+            Log.i(TAG, "loadConfig ENABLED: "+ENABLED+", ENABLE_DISPLAY_CONTROL: "+ENABLE_DISPLAY_CONTROL
+                    +", ENABLE_DISABLE_AUDIO: "+ENABLE_DISABLE_AUDIO
+                    +", ENABLE_DISABLE_KEY: "+ENABLE_DISABLE_KEY
+                    +", RE_LAUNCH_FLAG: "+RE_LAUNCH_FLAG
+            );
             PROCESS_LOAD_STATUS.put(processName, true);
         } catch (RemotePreferenceAccessException e) {
             // Provider unreachable / not exported / permission denied -> the "config looks all off" case.
