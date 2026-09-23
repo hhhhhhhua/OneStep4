@@ -1792,10 +1792,6 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 refreshVirtualDisplaySize(holder, viewWidth, viewHeight, false);
             }
         }
-        if (appToStart != null && displayId >= 0) {
-            pendingApp = null;
-            start(appToStart);
-        }
     }
 
     @Override
