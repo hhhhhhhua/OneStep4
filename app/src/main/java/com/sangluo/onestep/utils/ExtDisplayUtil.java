@@ -67,7 +67,7 @@ public class ExtDisplayUtil {
     }
 
     /**
-     * 获取外接屏幕 DisplayId
+     * 获取外接屏幕 DisplayId（包含虚拟屏幕）
      * @return
      */
     public static Integer getHdmiDisplayId(Context context) {
@@ -100,6 +100,49 @@ public class ExtDisplayUtil {
             }
         }catch (Exception e){
             Log.e(TAG, "getHdmiDisplayId e: "+e.getMessage());
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    /**
+     * 获取外接物理屏幕 DisplayId(不包含虚拟屏幕)
+     * @return
+     */
+    public static Integer getRealHdmiDisplayId(Context context) {
+        try{
+            DisplayManager displayManager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+            Display[] displays = displayManager.getDisplays();
+            if (displays != null && displays.length > 0){
+                for (int i = 0; i < displays.length; i++) {
+                    Display d = displays[i];
+                    boolean internal = true;
+                    if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+                        internal = d.isInternal();
+                    }else{
+                        if (d.getDisplayId() != 0){
+                            internal = false;
+                        }
+                    }
+
+                    String s = "[" + i + "]" +
+                            " displayId=" + d.getDisplayId() +
+                            " name=" + d.getName() +
+                            " state=" + d.getState() +
+                            " size=" + d.getWidth() + "x" + d.getHeight();
+                    Log.i(TAG, s);
+
+                    if (!internal && !d.getName().contains("OneStepSlot")){
+                        Display displayObj = ExtDisplayUtil.getDisplayObj(context, d.getDisplayId());
+                        int mType = (int)ReflectUtil.invokeMethodVal(Display.class, "getType", displayObj);
+                        if (mType == TYPE_EXTERNAL) {
+                            return d.getDisplayId();
+                        }
+                    }
+                }
+            }
+        }catch (Exception e){
+            Log.e(TAG, "getRealHdmiDisplayId e: "+e.getMessage());
             e.printStackTrace();
         }
         return null;

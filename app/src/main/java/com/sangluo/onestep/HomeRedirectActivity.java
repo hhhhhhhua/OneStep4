@@ -30,6 +30,7 @@ public final class HomeRedirectActivity extends Activity {
         try {
             ActivityOptions options = ActivityOptions.makeBasic();
             Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(getApplicationContext());
+            Log.i(TAG, "启动onestep4在：DisplayId" + hdmiDisplayId);
             options.setLaunchDisplayId(hdmiDisplayId == null ? 0 : hdmiDisplayId);
             startActivity(appIntent, options.toBundle());
         } catch (ActivityNotFoundException e) {

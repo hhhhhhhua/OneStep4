@@ -77,7 +77,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:alwaysRetainTaskState="true"
-            android:canDisplayOnRemoteDevices="false"
+            android:canDisplayOnRemoteDevices="true"
             android:taskAffinity=""
             android:excludeFromRecents="true"
             android:resizeableActivity="true"

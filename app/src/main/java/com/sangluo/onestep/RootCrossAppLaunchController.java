@@ -1,5 +1,7 @@
 package com.sangluo.onestep;
 
+import static com.sangluo.onestep.utils.ExtDisplayUtil.TYPE_VIRTUAL;
+
 import android.content.Intent;
 import android.os.Binder;
 import android.os.Bundle;
@@ -13,6 +15,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.sangluo.onestep.shizuku.RootInputBridgeService;
 import com.sangluo.onestep.utils.ExtDisplayUtil;
+import com.sangluo.onestep.utils.ReflectUtil;
 import com.sangluo.onestep.utils.SysServiceObjUtil;
 
 import java.lang.reflect.Field;
@@ -22,6 +25,7 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.DeflaterInputStream;
 
 /** Intercepts cross-package starts while a OneStep virtual display owns focus. */
 final class RootCrossAppLaunchController extends Binder {
@@ -120,7 +124,10 @@ final class RootCrossAppLaunchController extends Binder {
             Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(SysServiceObjUtil.getCurrentContext());
             lastTargetPackage = targetPackage;
             lastIntent = intent;
-            if (hdmiDisplayId != null && b){
+            Display displayObj = ExtDisplayUtil.getDisplayObj(SysServiceObjUtil.getCurrentContext(), hdmiDisplayId);
+            int mType = (int)ReflectUtil.invokeMethodVal(Display.class, "getType", displayObj);
+            Log.i(TAG, "activityStartingTransaction hdmiDisplayId: " + hdmiDisplayId + ", b: " + b + ", mType: " + mType);
+            if (hdmiDisplayId != null && b && mType != TYPE_VIRTUAL){
                 allow = true;
             }else{
                 if(RootInputBridgeService.getAppLaunchWhiteSet().contains(displayBridge.getRoutingSourcePackage())){

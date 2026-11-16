@@ -230,6 +230,7 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
 
                     // 只有设备变化时才处理
                     if (!event.equals(lastEvent)) {
+                        Log.i(TAG, "lastEvent change: " + event);
                         lastEvent = event;
                         currentEventDevId = event.replace("/dev/input/", "");
                     }
