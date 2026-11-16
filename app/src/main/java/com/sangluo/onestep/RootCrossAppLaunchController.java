@@ -124,8 +124,11 @@ final class RootCrossAppLaunchController extends Binder {
             Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(SysServiceObjUtil.getCurrentContext());
             lastTargetPackage = targetPackage;
             lastIntent = intent;
-            Display displayObj = ExtDisplayUtil.getDisplayObj(SysServiceObjUtil.getCurrentContext(), hdmiDisplayId);
-            int mType = (int)ReflectUtil.invokeMethodVal(Display.class, "getType", displayObj);
+            Integer mType = null;
+            if (hdmiDisplayId != null){
+                Display displayObj = ExtDisplayUtil.getDisplayObj(SysServiceObjUtil.getCurrentContext(), hdmiDisplayId);
+                mType = (int)ReflectUtil.invokeMethodVal(Display.class, "getType", displayObj);
+            }
             Log.i(TAG, "activityStartingTransaction hdmiDisplayId: " + hdmiDisplayId + ", b: " + b + ", mType: " + mType);
             if (hdmiDisplayId != null && b && mType != TYPE_VIRTUAL){
                 allow = true;
