@@ -885,6 +885,10 @@ public class MainActivity extends Activity {
         }
         mediaRootExecutor.execute(() -> {
             ShizukuServiceUtil.waitServiceInitOver();
+            Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(getApplicationContext());
+            if (hdmiDisplayId != null){
+                persistentRootShell.run("wm density 320 -d " + hdmiDisplayId);
+            }
 
             MainActivity.this.mainHandler.post(() -> {
                 requestWindowFeature(Window.FEATURE_NO_TITLE);

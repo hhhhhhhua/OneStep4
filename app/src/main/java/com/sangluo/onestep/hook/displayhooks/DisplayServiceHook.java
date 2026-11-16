@@ -1,5 +1,7 @@
 package com.sangluo.onestep.hook.displayhooks;
 
+import static com.sangluo.onestep.utils.ExtDisplayUtil.TYPE_EXTERNAL;
+
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -58,7 +60,45 @@ public class DisplayServiceHook {
         hookDisplayDeviceRepository(lpparam);
         hookInputManagerService(lpparam);
         hookInputConfigChange(lpparam);
+        hookAllowToLaunchOnDisplay(lpparam);
         installed = true;
+    }
+
+
+    private static void hookAllowToLaunchOnDisplay(XC_LoadPackage.LoadPackageParam lpparam){
+        XposedHelpers.findAndHookMethod("com.android.server.wm.ActivityTaskSupervisor", lpparam.classLoader, "isCallerAllowedToLaunchOnDisplay", int.class, int.class, int.class, android.content.pm.ActivityInfo.class, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                super.beforeHookedMethod(param);
+                param.setResult(true);
+            }
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                super.afterHookedMethod(param);
+            }
+        });
+    }
+
+    private static boolean isPhysicalExternalDisplay(Object displayDevice) {
+        try {
+            Object info = XposedHelpers.callMethod(
+                    displayDevice,
+                    "getDisplayDeviceInfoLocked"
+            );
+
+            if (info == null) {
+                return false;
+            }
+
+            int type = (int)XposedHelpers.getObjectField(info, "type");
+            Log.d(TAG, "display device type: "+type);
+
+            return type == TYPE_EXTERNAL;
+
+        } catch (Throwable e) {
+            Log.e(TAG, "isPhysicalExternalDisplay failed", e);
+            return false;
+        }
     }
 
     /**
@@ -88,6 +128,11 @@ public class DisplayServiceHook {
                             return;
                         }
 
+                        if (!isPhysicalExternalDisplay(param.args[0])) {
+                            Log.d(TAG, "忽略：不是 HDMI/物理外接屏");
+                            return;
+                        }
+
                         Log.d(TAG, "HDMI已连接! DISPLAY_CONTROL=" + SharedConfig.ENABLE_DISPLAY_CONTROL);
                         HDMI_CONNECTED = true;
                     }
@@ -97,6 +142,11 @@ public class DisplayServiceHook {
                         Log.d(TAG, "=== handleDisplayDeviceAdded after 被调用 ===");
                         
                         if (!SharedConfig.ENABLED) {
+                            return;
+                        }
+
+                        if (!isPhysicalExternalDisplay(param.args[0])) {
+                            Log.d(TAG, "忽略：不是 HDMI/物理外接屏");
                             return;
                         }
 
@@ -124,7 +174,7 @@ public class DisplayServiceHook {
                                         } catch (Throwable e) {
                                             Log.e(TAG, "manageAudioService failed", e);
                                         }
-                                    }, 600);
+                                    }, 1000);
                                 }
 
                             } catch (Throwable e) {
@@ -150,6 +200,10 @@ public class DisplayServiceHook {
                     @Override
                     protected void onAfter(MethodHookParam param) {
                         if (!SharedConfig.ENABLED) {
+                            return;
+                        }
+                        if (!isPhysicalExternalDisplay(param.args[0])) {
+                            Log.d(TAG, "忽略：不是 HDMI/物理外接屏");
                             return;
                         }
 
