@@ -18,6 +18,7 @@ import android.view.Display;
 import android.view.Surface;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.sangluo.onestep.constant.CommonConstant;
 import com.sangluo.onestep.system.display.DisplayOwnerPolicy;
 import com.sangluo.onestep.system.root.SystemServiceFailurePolicy;
 import com.sangluo.onestep.feature.drag.ImageDragSourcePolicy;
@@ -309,7 +310,7 @@ public final class RootVirtualDisplayBridge extends Binder {
                     "--user", "0",
                     "--display", String.valueOf(displayId),
                     "-a", "android.intent.action.MAIN",
-                    "-n", "com.sangluo.onestepc16"
+                    "-n", CommonConstant.APP_PACKAGE_NAME
                     + "/"
                     + DisplayAccessActivity.class.getName(),
                     "-f", String.valueOf(0x10010000))
@@ -560,7 +561,7 @@ public final class RootVirtualDisplayBridge extends Binder {
     boolean routeCrossAppLaunch(int sourceDisplayId, String sourcePackage,
                                 Intent intent, String targetPackage) {
         if (intent == null || targetPackage == null || targetPackage.isEmpty()
-                || "com.sangluo.onestepc16".equals(targetPackage)) {
+                || CommonConstant.APP_PACKAGE_NAME.equals(targetPackage)) {
             return false;
         }
         boolean knownDisplay = false;

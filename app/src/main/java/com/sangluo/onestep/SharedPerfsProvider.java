@@ -1,6 +1,7 @@
 package com.sangluo.onestep;
 
 import com.crossbowffs.remotepreferences.RemotePreferenceProvider;
+import com.sangluo.onestep.constant.CommonConstant;
 
 public class SharedPerfsProvider extends RemotePreferenceProvider {
 
@@ -10,7 +11,7 @@ public class SharedPerfsProvider extends RemotePreferenceProvider {
 
     public SharedPerfsProvider() {
         super(
-                "com.sangluo.onestepc16.prefs",
+                CommonConstant.APP_PACKAGE_NAME + ".prefs",
                 new String[] {"enhance_mirror_prefs"}
         );
     }

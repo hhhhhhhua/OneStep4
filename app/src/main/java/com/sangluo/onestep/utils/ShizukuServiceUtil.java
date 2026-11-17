@@ -15,6 +15,7 @@ import com.sangluo.onestep.IRootInputBridgeService;
 import com.sangluo.onestep.IShizukuCommonService;
 import com.sangluo.onestep.MainActivity;
 import com.sangluo.onestep.OneStepApplication;
+import com.sangluo.onestep.constant.CommonConstant;
 import com.sangluo.onestep.frida.FridaBridge;
 import com.sangluo.onestep.shizuku.MouseMonitorUserService;
 import com.sangluo.onestep.shizuku.RootInputBridgeService;
@@ -37,19 +38,19 @@ public class ShizukuServiceUtil {
     private static IShizukuCommonService mShizukuCommonService;
     private static IRootInputBridgeService mRootInputBridgeService;
     private static Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
-            new ComponentName("com.sangluo.onestepc16", MouseMonitorUserService.class.getName())
+            new ComponentName(CommonConstant.APP_PACKAGE_NAME, MouseMonitorUserService.class.getName())
     )
             .daemon(false)
             .processNameSuffix("mouse_monitor_single")
             .version(1);
     private static Shizuku.UserServiceArgs args2 = new Shizuku.UserServiceArgs(
-            new ComponentName("com.sangluo.onestepc16", ShizukuCommonService.class.getName())
+            new ComponentName(CommonConstant.APP_PACKAGE_NAME, ShizukuCommonService.class.getName())
     )
             .daemon(false)
             .processNameSuffix("common_single")
             .version(1);
     private static Shizuku.UserServiceArgs args3 = new Shizuku.UserServiceArgs(
-            new ComponentName("com.sangluo.onestepc16", RootInputBridgeService.class.getName())
+            new ComponentName(CommonConstant.APP_PACKAGE_NAME, RootInputBridgeService.class.getName())
     )
             .daemon(false)
             .processNameSuffix("root_input_bridge")
@@ -126,7 +127,7 @@ public class ShizukuServiceUtil {
         Log.d(TAG, "Shizuku 注册mouse监听器： " + displayId);
         // 绑定 UserService 参数
         Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
-                new ComponentName("com.sangluo.onestepc16", MouseMonitorUserService.class.getName()))
+                new ComponentName(CommonConstant.APP_PACKAGE_NAME, MouseMonitorUserService.class.getName()))
                 .daemon(false)
                 .processNameSuffix("mouse_monitor")
                 .version(1);

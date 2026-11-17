@@ -5,6 +5,7 @@ import android.util.Log;
 
 import com.crossbowffs.remotepreferences.RemotePreferenceAccessException;
 import com.crossbowffs.remotepreferences.RemotePreferences;
+import com.sangluo.onestep.constant.CommonConstant;
 import com.sangluo.onestep.hook.DisPlayStringConst;
 import com.sangluo.onestep.utils.AweSomeUtil;
 
@@ -24,9 +25,9 @@ public class SharedConfig {
     public static boolean ENABLE_DISABLE_KEY = false;
     // 禁用配置更新app重新布局
     public static boolean RE_LAUNCH_FLAG = false;
-    public static String START_SOFT_WARE_PACKAGE = "com.sangluo.onestepc16";
+    public static final String START_SOFT_WARE_PACKAGE = CommonConstant.APP_PACKAGE_NAME;
 
-    private static final String AUTHORITY = "com.sangluo.onestepc16.prefs";
+    private static final String AUTHORITY = START_SOFT_WARE_PACKAGE + ".prefs";
     private static final String PREF_FILE = "enhance_mirror_prefs";
 
     // Do NOT build RemotePreferences in a static initializer: the owning app's

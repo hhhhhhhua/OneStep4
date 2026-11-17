@@ -78,6 +78,7 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
+import com.sangluo.onestep.constant.CommonConstant;
 import com.sangluo.onestep.data.settings.OneStepSettings;
 import com.sangluo.onestep.data.settings.OneStepSettingsStore;
 import com.sangluo.onestep.data.settings.TopAppListPolicy;
@@ -328,7 +329,7 @@ public class MainActivity extends Activity {
     private static boolean one_step_mode_flag = false;
     private static boolean focusFlag = false;
     private static final Shizuku.UserServiceArgs args = new Shizuku.UserServiceArgs(
-            new ComponentName("com.sangluo.onestepc16", ShizukuKeyService.class.getName())
+            new ComponentName(CommonConstant.APP_PACKAGE_NAME, ShizukuKeyService.class.getName())
     )
             .daemon(false)
             .processNameSuffix("key_filter")

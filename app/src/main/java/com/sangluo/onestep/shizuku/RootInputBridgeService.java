@@ -24,6 +24,7 @@ import com.sangluo.onestep.MainActivity;
 import com.sangluo.onestep.MotionEventCodec;
 import com.sangluo.onestep.RootActivityManagerCompat;
 import com.sangluo.onestep.RootVirtualDisplayBridge;
+import com.sangluo.onestep.constant.CommonConstant;
 import com.sangluo.onestep.feature.embedding.HostedBackDispatchPolicy;
 import com.sangluo.onestep.frida.FridaBridge;
 import com.sangluo.onestep.system.root.ShellCommandResult;
@@ -125,7 +126,6 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
         phoneTouchDevId = runRes.output.strip();
         currentEventDevId = phoneTouchDevId;
         startGetEventMonitor();
-//        run("pkill -f 'com\\.sangluo\\.onestepc16'", 10);
         Context systemContext = createSystemContext();
         activityManager = (ActivityManager) systemContext.getSystemService(
                 Context.ACTIVITY_SERVICE);
@@ -171,11 +171,11 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
         scheduler.scheduleWithFixedDelay(new Runnable() {
             @Override
             public void run() {
-                if (!isAppProcessAlive("com.sangluo.onestepc16")) {
+                if (!isAppProcessAlive(CommonConstant.APP_PACKAGE_NAME)) {
                     // 发现 App 进程消失了，立即干净地结束 Service 进程
 //                    Log.e(TAG, "app死亡");
                     scheduler.shutdown();
-                    RootInputBridgeService.this.run("pkill -f 'com\\.sangluo\\.onestepc16'", 10);
+                    RootInputBridgeService.this.run("pkill -f '"+ CommonConstant.APP_PACKAGE_NAME.replace(".", "\\.") +"'", 10);
                 }
 //                Log.e(TAG, "app存活");
             }
