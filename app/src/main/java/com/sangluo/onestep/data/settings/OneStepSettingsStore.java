@@ -50,6 +50,7 @@ public final class OneStepSettingsStore {
     private static final String PREF_TOP_NAV_HEIGHT_SCALE = "top_nav_height_scale";
     private static final String PREF_TOP_NAV_HEIGHT_LEGACY = "top_nav_height";
     private static final String PREF_LOG_RECORDING_ENABLED = "log_recording_enabled";
+    private static final String PREF_HDMI_DENSITY = "hdmi_density";
     private static final String PREF_BUILT_IN_DESKTOP_COMPONENT =
             "built_in_desktop_component";
     private static final String BUILT_IN_DESKTOP_ONE_STEP = "onestep";
@@ -99,7 +100,19 @@ public final class OneStepSettingsStore {
                 OneStepSettings.sanitizeCornerTriggerSensitivity(preferences.getInt(
                         PREF_CORNER_TRIGGER_SENSITIVITY,
                         OneStepSettings.CORNER_TRIGGER_SENSITIVITY_DEFAULT)),
-                preferences.getBoolean(PREF_LOG_RECORDING_ENABLED, false));
+                preferences.getBoolean(PREF_LOG_RECORDING_ENABLED, false),
+                OneStepSettings.sanitizeHdmiDensity(preferences.getInt(
+                        PREF_HDMI_DENSITY, OneStepSettings.HDMI_DENSITY_DEFAULT)));
+    }
+
+    public int loadHdmiDensity() {
+        return OneStepSettings.sanitizeHdmiDensity(preferences.getInt(
+                PREF_HDMI_DENSITY, OneStepSettings.HDMI_DENSITY_DEFAULT));
+    }
+
+    public void saveHdmiDensity(int density) {
+        preferences.edit().putInt(
+                PREF_HDMI_DENSITY, OneStepSettings.sanitizeHdmiDensity(density)).apply();
     }
 
     public Uri getBackgroundUri() {

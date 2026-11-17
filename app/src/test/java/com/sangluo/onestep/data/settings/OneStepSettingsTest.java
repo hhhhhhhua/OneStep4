@@ -39,6 +39,16 @@ public class OneStepSettingsTest {
     }
 
     @Test
+    public void clampsHdmiDensity() {
+        assertEquals(OneStepSettings.HDMI_DENSITY_MIN,
+                OneStepSettings.sanitizeHdmiDensity(1));
+        assertEquals(OneStepSettings.HDMI_DENSITY_MAX,
+                OneStepSettings.sanitizeHdmiDensity(5000));
+        assertEquals(320, OneStepSettings.sanitizeHdmiDensity(320));
+        assertEquals(320, OneStepSettings.HDMI_DENSITY_DEFAULT);
+    }
+
+    @Test
     public void restoresDefaultForInvalidSideWindowCount() {
         assertEquals(OneStepSettings.DEFAULT_SIDE_WINDOWS,
                 OneStepSettings.sanitizeAllowedSideWindowCount(-1));

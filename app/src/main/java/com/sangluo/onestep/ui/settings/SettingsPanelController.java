@@ -3,6 +3,9 @@ package com.sangluo.onestep.ui.settings;
 import static android.content.Context.MODE_PRIVATE;
 import static com.sangluo.onestep.data.settings.OneStepSettings.CORNER_TRIGGER_SENSITIVITY_MAX;
 import static com.sangluo.onestep.data.settings.OneStepSettings.CORNER_TRIGGER_SENSITIVITY_MIN;
+import static com.sangluo.onestep.data.settings.OneStepSettings.HDMI_DENSITY_DEFAULT;
+import static com.sangluo.onestep.data.settings.OneStepSettings.HDMI_DENSITY_MAX;
+import static com.sangluo.onestep.data.settings.OneStepSettings.HDMI_DENSITY_MIN;
 import static com.sangluo.onestep.data.settings.OneStepSettings.MIN_SIDE_WINDOWS;
 import static com.sangluo.onestep.data.settings.OneStepSettings.ONE_STEP_TRIGGER_AREA_SCALE_MAX;
 import static com.sangluo.onestep.data.settings.OneStepSettings.ONE_STEP_TRIGGER_AREA_SCALE_MIN;
@@ -78,7 +81,9 @@ import com.sangluo.onestep.system.root.ZygiskHookConfig;
 import com.sangluo.onestep.ui.widget.AspectRatioImageView;
 import com.sangluo.onestep.ui.widget.FixedViewportFrameLayout;
 import com.sangluo.onestep.ui.window.OneStepWindowView;
+import com.sangluo.onestep.utils.DeviceUtil;
 import com.sangluo.onestep.utils.ShizukuServiceUtil;
+import com.sangluo.onestep.utils.SysServiceObjUtil;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -119,6 +124,7 @@ public final class SettingsPanelController {
         boolean statusBarSpacingEnabled();
         boolean verticalWindowLayout();
         boolean logRecordingEnabled();
+        int hdmiDensity();
         int sideWindowCount();
         List<LauncherApp> topAppCandidates();
         Set<String> selectedTopAppInstanceKeys();
@@ -142,6 +148,7 @@ public final class SettingsPanelController {
         void saveStatusBarSpacingEnabled(boolean enabled);
         void saveVerticalWindowLayout(boolean enabled);
         void saveLogRecordingEnabled(boolean enabled);
+        void saveHdmiDensity(int density);
         void saveSideWindowCount(int count);
         void exportSessionLog();
         boolean rootAuthorizationGranted();
@@ -197,6 +204,7 @@ public final class SettingsPanelController {
     private TextView oneStepTriggerAreaValueView;
     private TextView cornerTriggerSensitivityValueView;
     private TextView logRecordingEnabledValueView;
+    private TextView hdmiDensityValueView;
     private Switch topComponentsVisibleSwitch;
     private Switch statusBarSpacingSwitch;
     private Switch verticalWindowLayoutSwitch;
@@ -214,6 +222,7 @@ public final class SettingsPanelController {
     private LinearLayout applyHookSettingsItem;
     private LinearLayout exportLogItem;
     private int oneStepTriggerAreaScalePct;
+    private int hdmiDensity = HDMI_DENSITY_DEFAULT;
     private int cornerTriggerSensitivityPct;
     private int topNavVerticalMarginScalePct;
     private int topAppIconScalePct;
@@ -417,6 +426,54 @@ public final class SettingsPanelController {
                 .show();
     }
 
+    private void showHdmiDensityDialog() {
+        final EditText editText = new EditText(activity);
+        editText.setSingleLine(true);
+        editText.setInputType(InputType.TYPE_CLASS_NUMBER);
+        editText.setText(String.valueOf(hdmiDensity));
+        editText.setSelection(editText.length());
+        editText.setGravity(Gravity.CENTER);
+        editText.setHint(HDMI_DENSITY_MIN + " - " + HDMI_DENSITY_MAX);
+        LinearLayout container = new LinearLayout(activity);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int padding = dp(20);
+        container.setPadding(padding, dp(8), padding, 0);
+        container.addView(editText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        AlertDialog dialog = showRoundedDialog(new AlertDialog.Builder(activity)
+                .setTitle("设置dpi")
+                .setMessage("请输入 " + HDMI_DENSITY_MIN + " - " + HDMI_DENSITY_MAX
+                        + " 之间的数值，仅作用于 HDMI/扩展屏，默认 "
+                        + HDMI_DENSITY_DEFAULT + "。")
+                .setView(container)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", null));
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            int value;
+            try {
+                value = Integer.parseInt(editText.getText().toString().trim());
+            } catch (NumberFormatException e) {
+                Toast.makeText(activity, "请输入 " + HDMI_DENSITY_MIN + " - "
+                        + HDMI_DENSITY_MAX + " 之间的整数", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (value < HDMI_DENSITY_MIN || value > HDMI_DENSITY_MAX) {
+                Toast.makeText(activity, "数值必须在 " + HDMI_DENSITY_MIN + " - "
+                        + HDMI_DENSITY_MAX + " 之间", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            saveHdmiDensity(value);
+            dialog.dismiss();
+        });
+    }
+
+    private void saveHdmiDensity(int density) {
+        hdmiDensity = density;
+        callbacks.saveHdmiDensity(density);
+        refresh();
+    }
+
     private void saveWhiteList(String text) {
 
         OneStepApplication.getContext().getSharedPreferences("settings", MODE_PRIVATE)
@@ -510,6 +567,15 @@ public final class SettingsPanelController {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
         moduleSettingsLp.topMargin = dp(12);
         list.addView(moduleSettingsItem, moduleSettingsLp);
+
+        LinearLayout hdmiDensityItem = createSettingsItem(
+                "设置dpi", "仅对 HDMI/扩展屏生效（100-999）", hdmiDensity + " dpi");
+        hdmiDensityValueView = (TextView) hdmiDensityItem.getTag();
+        hdmiDensityItem.setOnClickListener(v -> showHdmiDensityDialog());
+        LinearLayout.LayoutParams hdmiDensityLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(88));
+        hdmiDensityLp.topMargin = dp(12);
+        list.addView(hdmiDensityItem, hdmiDensityLp);
 
         LinearLayout systemHomeItem = createSettingsItem(
                 "系统默认桌面", "点击设置");
@@ -1397,6 +1463,9 @@ public final class SettingsPanelController {
         if (exportLogItem != null) {
             exportLogItem.setVisibility(logRecordingEnabled ? View.VISIBLE : View.GONE);
         }
+        if (hdmiDensityValueView != null) {
+            hdmiDensityValueView.setText(hdmiDensity + " dpi");
+        }
         if (sideWindowCountValueView != null) {
             sideWindowCountValueView.setText(getSideWindowCountLabel());
         }
@@ -2272,6 +2341,7 @@ public final class SettingsPanelController {
         statusBarSpacingEnabled = callbacks.statusBarSpacingEnabled();
         verticalWindowLayout = callbacks.verticalWindowLayout();
         logRecordingEnabled = callbacks.logRecordingEnabled();
+        hdmiDensity = callbacks.hdmiDensity();
         sideWindowCount = callbacks.sideWindowCount();
         List<LauncherApp> candidates = callbacks.topAppCandidates();
         topAppCandidates = candidates == null

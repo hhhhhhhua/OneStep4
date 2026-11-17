@@ -36,6 +36,9 @@ public final class OneStepSettings {
     public static final int CORNER_TRIGGER_SENSITIVITY_DEFAULT = 100;
     public static final int CORNER_TRIGGER_SENSITIVITY_MIN = 60;
     public static final int CORNER_TRIGGER_SENSITIVITY_MAX = 160;
+    public static final int HDMI_DENSITY_DEFAULT = 320;
+    public static final int HDMI_DENSITY_MIN = 100;
+    public static final int HDMI_DENSITY_MAX = 999;
 
     public final int desktopGridRows;
     public final int desktopGridColumns;
@@ -50,6 +53,7 @@ public final class OneStepSettings {
     public final int oneStepTriggerAreaScalePct;
     public final int cornerTriggerSensitivityPct;
     public final boolean logRecordingEnabled;
+    public final int hdmiDensity;
 
     public OneStepSettings(int desktopGridRows, int desktopGridColumns,
                            int topAppIconScalePct, int topAppStripSpacingScalePct,
@@ -57,7 +61,8 @@ public final class OneStepSettings {
                            boolean statusBarSpacingEnabled, boolean verticalWindowLayout,
                            int sideWindowCount,
                            int topNavVerticalMarginScalePct, int oneStepTriggerAreaScalePct,
-                           int cornerTriggerSensitivityPct, boolean logRecordingEnabled) {
+                           int cornerTriggerSensitivityPct, boolean logRecordingEnabled,
+                           int hdmiDensity) {
         this.desktopGridRows = desktopGridRows;
         this.desktopGridColumns = desktopGridColumns;
         this.topAppIconScalePct = topAppIconScalePct;
@@ -71,6 +76,7 @@ public final class OneStepSettings {
         this.oneStepTriggerAreaScalePct = oneStepTriggerAreaScalePct;
         this.cornerTriggerSensitivityPct = cornerTriggerSensitivityPct;
         this.logRecordingEnabled = logRecordingEnabled;
+        this.hdmiDensity = sanitizeHdmiDensity(hdmiDensity);
     }
 
     public static int sanitizeGridRows(int rows) {
@@ -118,6 +124,10 @@ public final class OneStepSettings {
     public static int sanitizeCornerTriggerSensitivity(int sensitivityPct) {
         return clamp(sensitivityPct, CORNER_TRIGGER_SENSITIVITY_MIN,
                 CORNER_TRIGGER_SENSITIVITY_MAX);
+    }
+
+    public static int sanitizeHdmiDensity(int density) {
+        return clamp(density, HDMI_DENSITY_MIN, HDMI_DENSITY_MAX);
     }
 
     public static int sanitizeSideWindowCount(int count) {

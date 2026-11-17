@@ -155,6 +155,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static com.sangluo.onestep.data.settings.OneStepSettings.CORNER_TRIGGER_SENSITIVITY_DEFAULT;
+import static com.sangluo.onestep.data.settings.OneStepSettings.HDMI_DENSITY_DEFAULT;
 import static com.sangluo.onestep.data.settings.OneStepSettings.ONE_STEP_TRIGGER_AREA_SCALE_DEFAULT;
 import static com.sangluo.onestep.data.settings.OneStepSettings.DEFAULT_SIDE_WINDOWS;
 import static com.sangluo.onestep.data.settings.OneStepSettings.DESKTOP_PAGE_COLUMNS;
@@ -170,6 +171,7 @@ import static com.sangluo.onestep.data.settings.OneStepSettings.canUseSideWindow
 import static com.sangluo.onestep.data.settings.OneStepSettings.isSupportedGridLayout;
 import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeAllowedSideWindowCount;
 import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeCornerTriggerSensitivity;
+import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeHdmiDensity;
 import static com.sangluo.onestep.data.settings.OneStepSettings.oneStepTriggerAreaSizeDp;
 import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeSideWindowCount;
 import static com.sangluo.onestep.data.settings.OneStepSettings.sanitizeTopAppIconScale;
@@ -811,6 +813,7 @@ public class MainActivity extends Activity {
     private int oneStepTriggerAreaScalePct = ONE_STEP_TRIGGER_AREA_SCALE_DEFAULT;
     private int cornerTriggerSensitivityPct = CORNER_TRIGGER_SENSITIVITY_DEFAULT;
     private boolean logRecordingEnabled;
+    private int hdmiDensity = HDMI_DENSITY_DEFAULT;
     private SystemUiController systemUiController;
     private SessionLogRecorder sessionLogRecorder;
     private SettingsPanelController settingsPanelController;
@@ -887,7 +890,8 @@ public class MainActivity extends Activity {
             ShizukuServiceUtil.waitServiceInitOver();
             Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(getApplicationContext());
             if (hdmiDisplayId != null){
-                persistentRootShell.run("wm density 320 -d " + hdmiDisplayId);
+                hdmiDensity = new OneStepSettingsStore(getApplicationContext()).loadHdmiDensity();
+                persistentRootShell.run("wm density " + hdmiDensity + " -d " + hdmiDisplayId);
             }
 
             MainActivity.this.mainHandler.post(() -> {
@@ -4548,6 +4552,32 @@ public class MainActivity extends Activity {
         oneStepTriggerAreaScalePct = settings.oneStepTriggerAreaScalePct;
         cornerTriggerSensitivityPct = settings.cornerTriggerSensitivityPct;
         logRecordingEnabled = settings.logRecordingEnabled;
+        hdmiDensity = settings.hdmiDensity;
+    }
+
+    private void saveHdmiDensity(int density) {
+        int sanitized = sanitizeHdmiDensity(density);
+        if (sanitized == hdmiDensity) {
+            return;
+        }
+        hdmiDensity = sanitized;
+        if (settingsStore == null) {
+            settingsStore = new OneStepSettingsStore(this);
+        }
+        settingsStore.saveHdmiDensity(sanitized);
+        updateSettingsPageViews();
+        applyHdmiDisplayDensity();
+    }
+
+    private void applyHdmiDisplayDensity() {
+        final int density = hdmiDensity;
+        mediaRootExecutor.execute(() -> {
+            Integer hdmiDisplayId = ExtDisplayUtil.getHdmiDisplayId(getApplicationContext());
+            if (hdmiDisplayId == null) {
+                return;
+            }
+            persistentRootShell.run("wm density " + density + " -d " + hdmiDisplayId);
+        });
     }
 
     private void reconcileTopAppListConfiguration() {
@@ -4965,6 +4995,7 @@ public class MainActivity extends Activity {
             }
             @Override public boolean verticalWindowLayout() { return verticalWindowLayout; }
             @Override public boolean logRecordingEnabled() { return logRecordingEnabled; }
+            @Override public int hdmiDensity() { return hdmiDensity; }
             @Override public int sideWindowCount() { return sideWindowCount; }
             @Override public List<LauncherApp> topAppCandidates() {
                 return new ArrayList<>(orderedTopAppCandidates);
@@ -5035,6 +5066,9 @@ public class MainActivity extends Activity {
             }
             @Override public void saveLogRecordingEnabled(boolean enabled) {
                 MainActivity.this.saveLogRecordingEnabled(enabled);
+            }
+            @Override public void saveHdmiDensity(int density) {
+                MainActivity.this.saveHdmiDensity(density);
             }
             @Override public void saveSideWindowCount(int count) {
                 MainActivity.this.saveSideWindowCount(count);
@@ -5481,6 +5515,10 @@ public class MainActivity extends Activity {
     }
 
     private void showInternalSettingsPage() {
+        Integer hdmiDisplayIdBridge = ExtDisplayUtil.getHdmiDisplayId(getApplicationContext());
+        Integer displayId = hdmiDisplayIdBridge != null ? hdmiDisplayIdBridge : 0;
+        DeviceUtil.bindDeviceToVirtualDisplay(SysServiceObjUtil.getInputManager(), 0, displayId);
+        Log.i(TAG, "2Focused hosted display=" + displayId);
         if (settingsPanelController == null || activeMainSlot < 0
                 || activeMainSlot >= MAX_WINDOWS || isWindowAnimationRunning()
                 || mainSlotSwitchPendingSlot >= 0 || mainContentReplacementPendingSlot >= 0
