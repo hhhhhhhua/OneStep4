@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Rect;
 import android.hardware.input.IInputManager;
 import android.os.IBinder;
@@ -19,6 +20,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Surface;
 
+import com.crossbowffs.remotepreferences.RemotePreferences;
 import com.sangluo.onestep.IRootInputBridgeService;
 import com.sangluo.onestep.MainActivity;
 import com.sangluo.onestep.MotionEventCodec;
@@ -27,8 +29,11 @@ import com.sangluo.onestep.RootVirtualDisplayBridge;
 import com.sangluo.onestep.constant.CommonConstant;
 import com.sangluo.onestep.feature.embedding.HostedBackDispatchPolicy;
 import com.sangluo.onestep.frida.FridaBridge;
+import com.sangluo.onestep.hook.DisPlayStringConst;
+import com.sangluo.onestep.hook.config.SharedConfig;
 import com.sangluo.onestep.system.root.ShellCommandResult;
 import com.sangluo.onestep.system.root.SystemServiceFailurePolicy;
+import com.sangluo.onestep.utils.AweSomeUtil;
 import com.sangluo.onestep.utils.DeviceUtil;
 import com.sangluo.onestep.utils.ExtDisplayUtil;
 import com.sangluo.onestep.utils.SysServiceObjUtil;
@@ -175,6 +180,14 @@ public class RootInputBridgeService  extends IRootInputBridgeService.Stub implem
                     // 发现 App 进程消失了，立即干净地结束 Service 进程
 //                    Log.e(TAG, "app死亡");
                     scheduler.shutdown();
+                    try{
+                        RemotePreferences prefs = new RemotePreferences(AweSomeUtil.getAnyContext(), SharedConfig.AUTHORITY, CommonConstant.MODULE_PREFS_NAME, true);
+                        SharedPreferences.Editor editor = prefs.edit();
+                        editor.putBoolean(DisPlayStringConst.IS_VIRTUAL_DISPLAY_RUN, false);
+                        editor.commit();
+                    }catch (Exception e){
+                        Log.e(TAG, "reset prefs error: " + e.getMessage(), e);
+                    }
                     RootInputBridgeService.this.run("pkill -f '"+ CommonConstant.APP_PACKAGE_NAME.replace(".", "\\.") +"'", 10);
                 }
 //                Log.e(TAG, "app存活");

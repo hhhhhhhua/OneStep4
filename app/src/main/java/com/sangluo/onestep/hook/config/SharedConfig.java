@@ -25,10 +25,11 @@ public class SharedConfig {
     public static boolean ENABLE_DISABLE_KEY = false;
     // 禁用配置更新app重新布局
     public static boolean RE_LAUNCH_FLAG = false;
+    // app是否运行在虚拟屏幕上
+    public static boolean IS_VIRTUAL_DISPLAY_RUN = false;
     public static final String START_SOFT_WARE_PACKAGE = CommonConstant.APP_PACKAGE_NAME;
 
-    private static final String AUTHORITY = START_SOFT_WARE_PACKAGE + ".prefs";
-    private static final String PREF_FILE = "enhance_mirror_prefs";
+    public static final String AUTHORITY = START_SOFT_WARE_PACKAGE + ".prefs";
 
     // Do NOT build RemotePreferences in a static initializer: the owning app's
     // ContentProvider / current context may not be ready yet (see RemotePreferences
@@ -39,7 +40,7 @@ public class SharedConfig {
         String processName = AweSomeUtil.getCurrentProcessName();
         Log.d(TAG, "loadConfig 调用，进程: " + processName + ", 加载状态: " + PROCESS_LOAD_STATUS.get(processName));
 
-        RemotePreferences prefs = new RemotePreferences(AweSomeUtil.getAnyContext(), AUTHORITY, PREF_FILE, true);
+        RemotePreferences prefs = new RemotePreferences(AweSomeUtil.getAnyContext(), AUTHORITY, CommonConstant.MODULE_PREFS_NAME, true);
         if (prefs == null) {
             Log.w(TAG, "loadConfig skipped: provider not ready, keep current/default values");
             return;
@@ -49,16 +50,19 @@ public class SharedConfig {
             ENABLE_DISABLE_AUDIO = prefs.getBoolean(DisPlayStringConst.DISABLE_AUDIO_CONST, false);
             ENABLE_DISABLE_KEY = prefs.getBoolean(DisPlayStringConst.DISABLE_KEY_CONST, false);
             RE_LAUNCH_FLAG = prefs.getBoolean(DisPlayStringConst.RE_LAUNCH_FLAG_CONST, false);
+            IS_VIRTUAL_DISPLAY_RUN = prefs.getBoolean(DisPlayStringConst.IS_VIRTUAL_DISPLAY_RUN, false);
             Log.i(TAG, "loadConfig ENABLED: "+ENABLED+", ENABLE_DISPLAY_CONTROL: "+ENABLE_DISPLAY_CONTROL
                     +", ENABLE_DISABLE_AUDIO: "+ENABLE_DISABLE_AUDIO
                     +", ENABLE_DISABLE_KEY: "+ENABLE_DISABLE_KEY
                     +", RE_LAUNCH_FLAG: "+RE_LAUNCH_FLAG
+                    +", IS_VIRTUAL_DISPLAY_RUN: "+IS_VIRTUAL_DISPLAY_RUN
             );
             PROCESS_LOAD_STATUS.put(processName, true);
         } catch (RemotePreferenceAccessException e) {
             // Provider unreachable / not exported / permission denied -> the "config looks all off" case.
             Log.e(TAG, "loadConfig: provider unreachable, authority=" + AUTHORITY
-                    + " file=" + PREF_FILE + " (is the app installed & provider exported?)", e);
+                    + " file=" + CommonConstant.MODULE_PREFS_NAME + " (is the app installed & provider exported?)", e);
+            IS_VIRTUAL_DISPLAY_RUN = false;
         } catch (Throwable e) {
             Log.e(TAG, "配置加载失败", e);
         }

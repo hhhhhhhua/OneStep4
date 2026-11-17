@@ -74,6 +74,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.sangluo.onestep.IRootInputBridgeService;
 import com.sangluo.onestep.OneStepApplication;
 import com.sangluo.onestep.R;
+import com.sangluo.onestep.constant.CommonConstant;
 import com.sangluo.onestep.feature.embedding.DefaultHomeRoutingPolicy;
 import com.sangluo.onestep.hook.DisPlayStringConst;
 import com.sangluo.onestep.model.LauncherApp;
@@ -389,10 +390,6 @@ public final class SettingsPanelController {
 
     private static final String PREF_WHITE_LIST = "white_list";
 
-    // Shared with the hook process: RemotePreferenceProvider (SharedPerfsProvider)
-    // serves this file and SharedConfig.loadConfig() reads the same keys back.
-    private static final String MODULE_PREFS_NAME = "enhance_mirror_prefs";
-
     private void showModuleSettingsDialog() {
         final String[] keys = {
                 DisPlayStringConst.POWER_OFF_CONST,
@@ -406,7 +403,7 @@ public final class SettingsPanelController {
                 "禁用系统快捷键",
                 "禁用配置更新app重新布局",
         };
-        SharedPreferences prefs = activity.getSharedPreferences(MODULE_PREFS_NAME, MODE_PRIVATE);
+        SharedPreferences prefs = activity.getSharedPreferences(CommonConstant.MODULE_PREFS_NAME, MODE_PRIVATE);
         final boolean[] checked = new boolean[keys.length];
         for (int index = 0; index < keys.length; index++) {
             checked[index] = prefs.getBoolean(keys[index], false);

@@ -174,7 +174,7 @@ public class DisplayServiceHook {
                                         } catch (Throwable e) {
                                             Log.e(TAG, "manageAudioService failed", e);
                                         }
-                                    }, 1000);
+                                    }, 1500);
                                 }
 
                             } catch (Throwable e) {
@@ -295,7 +295,7 @@ public class DisplayServiceHook {
                 new BaseMethodHook() {
                     @Override
                     protected void onBefore(MethodHookParam param) throws Throwable {
-                        if (!HDMI_CONNECTED) {
+                        if (!HDMI_CONNECTED && !SharedConfig.IS_VIRTUAL_DISPLAY_RUN) {
                             return;
                         }
 
@@ -490,7 +490,7 @@ public class DisplayServiceHook {
 
                         @Override
                         protected void onAfter(MethodHookParam param) throws Throwable {
-                            if (!HDMI_CONNECTED) {
+                            if (!HDMI_CONNECTED && !SharedConfig.IS_VIRTUAL_DISPLAY_RUN) {
                                 return;
                             }
 

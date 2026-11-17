@@ -7,4 +7,5 @@ public class DisPlayStringConst {
     public final static String DISABLE_AUDIO_CONST = "disable_audio";
     public final static String DISABLE_KEY_CONST = "disable_key";
     public final static String RE_LAUNCH_FLAG_CONST = "relaunch_flag";
+    public final static String IS_VIRTUAL_DISPLAY_RUN = "is_virtual_display_run";
 }

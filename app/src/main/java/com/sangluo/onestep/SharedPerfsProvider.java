@@ -12,7 +12,7 @@ public class SharedPerfsProvider extends RemotePreferenceProvider {
     public SharedPerfsProvider() {
         super(
                 CommonConstant.APP_PACKAGE_NAME + ".prefs",
-                new String[] {"enhance_mirror_prefs"}
+                new String[] {CommonConstant.MODULE_PREFS_NAME}
         );
     }
 
