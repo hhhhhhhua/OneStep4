@@ -79,6 +79,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import com.sangluo.onestep.constant.CommonConstant;
+import com.sangluo.onestep.data.settings.FloatingBallAppListPolicy;
 import com.sangluo.onestep.data.settings.OneStepSettings;
 import com.sangluo.onestep.data.settings.OneStepSettingsStore;
 import com.sangluo.onestep.data.settings.TopAppListPolicy;
@@ -107,7 +108,10 @@ import com.sangluo.onestep.system.root.ShellCommandResult;
 import com.sangluo.onestep.system.root.ZygiskHookConfig;
 import com.sangluo.onestep.system.ui.SystemUiController;
 import com.sangluo.onestep.ui.background.BlurredBackgroundView;
+import com.sangluo.onestep.ui.floatingball.FloatingBallController;
+import com.sangluo.onestep.ui.floatingball.FloatingBallItem;
 import com.sangluo.onestep.ui.gesture.CornerTriggerGesturePolicy;
+import com.sangluo.onestep.ui.settings.AppSearchPickerDialog;
 import com.sangluo.onestep.ui.settings.SettingsPanelController;
 import com.sangluo.onestep.ui.topbar.TopPanelController;
 import com.sangluo.onestep.ui.widget.AppShortcutView;
@@ -293,6 +297,10 @@ public class MainActivity extends Activity {
     private List<LauncherApp> orderedTopAppCandidates = Collections.emptyList();
     private List<LauncherApp> topAppStripApps = Collections.emptyList();
     private Set<String> selectedTopAppInstanceKeys = Collections.emptySet();
+    private List<LauncherApp> floatingBallApps = Collections.emptyList();
+    private List<String> floatingBallAppKeys = Collections.emptyList();
+    private boolean floatingBallEnabled = true;
+    private FloatingBallController floatingBallController;
     private List<LauncherApp> builtInDesktopApps = Collections.emptyList();
     private LauncherApp builtInDesktopApp;
     private boolean builtInDesktopResolutionFresh;
@@ -938,6 +946,7 @@ public class MainActivity extends Activity {
         launcherApps = LauncherAppRepository.getCachedLauncherApps();
         recordLauncherIconConfiguration();
         reconcileTopAppListConfiguration();
+        reconcileFloatingBallApps();
         loadBuiltInDesktopAppsForStartup();
         reconcileDirectBootPrewarmDesktop();
         setContentView(createDesktop());
@@ -1098,6 +1107,12 @@ public class MainActivity extends Activity {
                 finishEdgeBack(event, false);
             }
             return true;
+        }
+        if (action == MotionEvent.ACTION_DOWN && floatingBallController != null
+                && floatingBallController.isTouchOnBall(event.getRawX(), event.getRawY())) {
+            // The floating ball owns this gesture: never start corner-trigger or
+            // edge-back tracking underneath it.
+            return super.dispatchTouchEvent(event);
         }
         if (action == MotionEvent.ACTION_DOWN) {
             cornerTriggerTracking = false;
@@ -1744,6 +1759,7 @@ public class MainActivity extends Activity {
 
         launcherApps = refreshedApps;
         reconcileTopAppListConfiguration();
+        reconcileFloatingBallApps();
         Map<String, LauncherApp> refreshedByInstance = new HashMap<>();
         Map<String, LauncherApp> refreshedByPackage = new HashMap<>();
         for (LauncherApp app : refreshedApps) {
@@ -1868,6 +1884,9 @@ public class MainActivity extends Activity {
         activityResumed = false;
         stopRunningTaskMonitoring();
         pauseMediaMonitoring();
+        if (floatingBallController != null) {
+            floatingBallController.collapse();
+        }
         super.onPause();
     }
 
@@ -1883,6 +1902,9 @@ public class MainActivity extends Activity {
         pauseMediaMonitoring();
         stopPipMonitoring(true);
         suspendWindowInputRouting();
+        if (floatingBallController != null) {
+            floatingBallController.collapse();
+        }
         super.onStop();
     }
 
@@ -1895,6 +1917,8 @@ public class MainActivity extends Activity {
         if (hasFocus) {
             applyStatusBarForCurrentMode();
             scheduleSideInputProtectionSync();
+        } else if (floatingBallController != null) {
+            floatingBallController.collapse();
         }
     }
 
@@ -2471,6 +2495,10 @@ public class MainActivity extends Activity {
         }
         ImageDragBridgeRegistry.unregister(imageDragBridgeListener);
         removeMainPaneSwapWindow(true);
+        if (floatingBallController != null) {
+            floatingBallController.detach();
+            floatingBallController = null;
+        }
         if (sessionLogRecorder != null) {
             sessionLogRecorder.close();
             sessionLogRecorder = null;
@@ -2920,6 +2948,8 @@ public class MainActivity extends Activity {
         setTopChromeVisible(false, false);
         applyWindowLayout(false);
         addCornerTriggers(root);
+        floatingBallController = createFloatingBallController();
+        floatingBallController.attach();
         return root;
     }
 
@@ -2948,6 +2978,9 @@ public class MainActivity extends Activity {
         if (workspace.getWidth() == 0 || workspace.getHeight() == 0) {
             workspace.post(() -> applyWindowLayout(false, onAnimationFinished));
             return;
+        }
+        if (animate && floatingBallController != null) {
+            floatingBallController.collapse();
         }
 
         Rect[] targetRects = calculateWindowRects();
@@ -4554,6 +4587,7 @@ public class MainActivity extends Activity {
         cornerTriggerSensitivityPct = settings.cornerTriggerSensitivityPct;
         logRecordingEnabled = settings.logRecordingEnabled;
         hdmiDensity = settings.hdmiDensity;
+        floatingBallEnabled = settingsStore.isFloatingBallEnabled();
     }
 
     private void saveHdmiDensity(int density) {
@@ -4995,6 +5029,7 @@ public class MainActivity extends Activity {
                 return statusBarSpacingEnabled;
             }
             @Override public boolean verticalWindowLayout() { return verticalWindowLayout; }
+            @Override public boolean floatingBallEnabled() { return floatingBallEnabled; }
             @Override public boolean logRecordingEnabled() { return logRecordingEnabled; }
             @Override public int hdmiDensity() { return hdmiDensity; }
             @Override public int sideWindowCount() { return sideWindowCount; }
@@ -5067,6 +5102,9 @@ public class MainActivity extends Activity {
             }
             @Override public void saveLogRecordingEnabled(boolean enabled) {
                 MainActivity.this.saveLogRecordingEnabled(enabled);
+            }
+            @Override public void saveFloatingBallEnabled(boolean enabled) {
+                MainActivity.this.saveFloatingBallEnabled(enabled);
             }
             @Override public void saveHdmiDensity(int density) {
                 MainActivity.this.saveHdmiDensity(density);
@@ -5681,6 +5719,19 @@ public class MainActivity extends Activity {
         updateSettingsPageViews();
         rebuildTopChromeContent();
         scheduleEmbeddedSlotRefresh();
+    }
+
+    private void saveFloatingBallEnabled(boolean enabled) {
+        if (enabled == floatingBallEnabled) {
+            return;
+        }
+        floatingBallEnabled = enabled;
+        if (settingsStore != null) {
+            settingsStore.saveFloatingBallEnabled(enabled);
+        }
+        if (floatingBallController != null) {
+            floatingBallController.refresh();
+        }
     }
 
     private void saveLogRecordingEnabled(boolean enabled) {
@@ -9284,6 +9335,9 @@ public class MainActivity extends Activity {
         updateShortcutAppStatuses();
         requestRunningTaskStatusRefresh();
         scheduleSideInputProtectionSync();
+        if (floatingBallController != null) {
+            floatingBallController.refresh();
+        }
     }
 
     private void updateShortcutAppStatuses() {
@@ -9337,6 +9391,7 @@ public class MainActivity extends Activity {
         }
         if (sideInputShieldController != null) {
             sideInputShieldController.update();
+            raiseFloatingBallAboveShields();
         }
     }
 
@@ -9717,6 +9772,229 @@ public class MainActivity extends Activity {
             this.target = target;
             this.app = app;
         }
+    }
+
+    // -------------------------------------------------------------- floating ball
+
+    private FloatingBallController createFloatingBallController() {
+        return new FloatingBallController(this, new FloatingBallController.Callbacks() {
+            @Override
+            public boolean isEnabled() {
+                return floatingBallEnabled && !activityDestroyed;
+            }
+
+            @Override
+            public List<FloatingBallItem> openedAppItems() {
+                return collectOpenedAppItems();
+            }
+
+            @Override
+            public List<LauncherApp> pinnedApps() {
+                return floatingBallApps;
+            }
+
+            @Override
+            public Drawable collapsedIcon() {
+                LauncherApp mainApp = currentMainApp();
+                return mainApp == null ? null : mainApp.icon;
+            }
+
+            @Override
+            public String collapsedLabel() {
+                LauncherApp mainApp = currentMainApp();
+                return mainApp == null ? "OneStep" : mainApp.label;
+            }
+
+            @Override
+            public boolean isInteractionBlocked() {
+                return activityDestroyed || exitOneStepPending || isWindowAnimationRunning()
+                        || mainSlotSwitchPendingSlot >= 0
+                        || mainContentReplacementPendingSlot >= 0
+                        || isCrossAppRouteUiBusy();
+            }
+
+            @Override
+            public void onFocusSlot(int slot) {
+                focusSlotFromBall(slot);
+            }
+
+            @Override
+            public void onOpenApp(LauncherApp app) {
+                addOrFocusApp(app);
+            }
+
+            @Override
+            public void onOpenPicker() {
+                showFloatingBallAppPicker();
+            }
+
+            @Override
+            public void onExpandedChanged(boolean expanded) {
+                // The expanded ring must sit above the side-slot input shields, otherwise
+                // taps on the ring would be swallowed by the shield windows.
+                if (expanded) {
+                    suspendWindowInputRouting();
+                } else {
+                    scheduleSideInputProtectionSync();
+                }
+            }
+
+            @Override
+            public float[] savedPosition() {
+                return settingsStore == null ? null : settingsStore.loadFloatingBallPosition();
+            }
+
+            @Override
+            public void onPositionChanged(float xRatio, float yRatio) {
+                if (settingsStore != null) {
+                    settingsStore.saveFloatingBallPosition(xRatio, yRatio);
+                }
+                mainHandler.post(MainActivity.this::raiseFloatingBallAboveShields);
+            }
+        });
+    }
+
+    private LauncherApp currentMainApp() {
+        if (activeMainSlot < 0 || activeMainSlot >= MAX_WINDOWS) {
+            return null;
+        }
+        return windowApps[activeMainSlot];
+    }
+
+    /** Apps hosted in slots right now, ordered like they appear on screen. */
+    private List<FloatingBallItem> collectOpenedAppItems() {
+        List<FloatingBallItem> items = new ArrayList<>();
+        for (int slot : getVisualSlotOrder()) {
+            if (!isWindowSlotEnabled(slot) || embeddedSlotClosing[slot]) {
+                continue;
+            }
+            LauncherApp app = windowApps[slot];
+            if (app == null || app.isHomeEntry()) {
+                continue;
+            }
+            items.add(FloatingBallItem.openedApp(app, slot, slot == activeMainSlot));
+        }
+        return items;
+    }
+
+    private List<Integer> getVisualSlotOrder() {
+        List<Integer> order = new ArrayList<>(MAX_WINDOWS);
+        List<Integer> mainSlots = new ArrayList<>(2);
+        for (int slot = 0; slot < MAX_WINDOWS; slot++) {
+            if (isMainPaneSlot(slot)) {
+                mainSlots.add(slot);
+            }
+        }
+        mainSlots.sort((first, second) -> {
+            OneStepWindowView firstView = windowViews[first];
+            OneStepWindowView secondView = windowViews[second];
+            int firstPosition = firstView == null ? 0
+                    : (verticalWindowLayout ? firstView.getTop() : firstView.getLeft());
+            int secondPosition = secondView == null ? 0
+                    : (verticalWindowLayout ? secondView.getTop() : secondView.getLeft());
+            return Integer.compare(firstPosition, secondPosition);
+        });
+        order.addAll(mainSlots);
+        for (int slot : sideSlotOrder) {
+            if (!isMainPaneSlot(slot)) {
+                order.add(slot);
+            }
+        }
+        return order;
+    }
+
+    /**
+     * The side-slot touch shields are sub-windows created after the floating ball, so they
+     * cover it whenever it overlaps an occupied slot. Re-attaching the ball puts it back on
+     * top; the shields only call {@code updateViewLayout} afterwards, which keeps the order.
+     */
+    private void raiseFloatingBallAboveShields() {
+        if (floatingBallController == null || sideInputShieldController == null) {
+            return;
+        }
+        Rect ballRect = floatingBallController.ballScreenRect();
+        if (ballRect == null) {
+            return;
+        }
+        if (sideInputShieldController.overlaps(
+                ballRect.left, ballRect.top, ballRect.right, ballRect.bottom)) {
+            floatingBallController.raise();
+        }
+    }
+
+    private void focusSlotFromBall(int slot) {
+        if (activityDestroyed || slot < 0 || slot >= MAX_WINDOWS
+                || windowApps[slot] == null || embeddedSlotClosing[slot]) {
+            return;
+        }
+        if (isWindowAnimationRunning() || mainSlotSwitchPendingSlot >= 0
+                || mainContentReplacementPendingSlot >= 0) {
+            Toast.makeText(this, "正在切换窗口，请稍后再试", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (isMainPaneSlot(slot)) {
+            activateMainPane(slot, true);
+        } else {
+            swapWithMain(slot);
+        }
+    }
+
+    private void reconcileFloatingBallApps() {
+        if (settingsStore == null) {
+            return;
+        }
+        List<String> savedKeys = settingsStore.loadFloatingBallAppKeys();
+        List<String> availableKeys = new ArrayList<>(launcherApps.size());
+        Map<String, LauncherApp> appsByKey = new HashMap<>();
+        for (LauncherApp app : launcherApps) {
+            availableKeys.add(app.instanceKey());
+            appsByKey.put(app.instanceKey(), app);
+        }
+        List<String> reconciled = FloatingBallAppListPolicy.reconcile(
+                availableKeys, savedKeys, OneStepSettings.MAX_FLOATING_BALL_APPS);
+        floatingBallAppKeys = reconciled;
+        List<LauncherApp> apps = new ArrayList<>(reconciled.size());
+        for (String key : reconciled) {
+            LauncherApp app = appsByKey.get(key);
+            if (app != null) {
+                apps.add(app);
+            }
+        }
+        floatingBallApps = apps;
+    }
+
+    private void saveFloatingBallAppKeys(List<String> keys) {
+        if (settingsStore == null) {
+            return;
+        }
+        settingsStore.saveFloatingBallAppKeys(keys);
+        reconcileFloatingBallApps();
+        if (floatingBallController != null) {
+            floatingBallController.refresh();
+        }
+    }
+
+    private void showFloatingBallAppPicker() {
+        if (launcherApps.isEmpty()) {
+            Toast.makeText(this, "未找到可添加的应用", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final List<LauncherApp> candidates = new ArrayList<>(launcherApps);
+        candidates.sort((first, second) -> String.CASE_INSENSITIVE_ORDER.compare(
+                first.label == null ? "" : first.label,
+                second.label == null ? "" : second.label));
+        if (floatingBallController != null) {
+            floatingBallController.setSuppressed(true);
+        }
+        AppSearchPickerDialog.show(this,
+                "悬浮球应用（最多 " + OneStepSettings.MAX_FLOATING_BALL_APPS + " 个）",
+                candidates, floatingBallAppKeys, OneStepSettings.MAX_FLOATING_BALL_APPS,
+                this::saveFloatingBallAppKeys,
+                () -> {
+                    if (floatingBallController != null) {
+                        floatingBallController.setSuppressed(false);
+                    }
+                });
     }
 
 }

@@ -7,6 +7,9 @@ public final class OneStepSettings {
     public static final int MAX_SIDE_WINDOWS = 6;
     public static final int DESKTOP_PAGE_ROWS = 4;
     public static final int DESKTOP_PAGE_COLUMNS = 3;
+    /** Upper bound of the second floating-ball layer (user-picked launcher apps). */
+    public static final int MAX_FLOATING_BALL_APPS = 8;
+    public static final int FLOATING_BALL_SIZE_DP = 56;
     public static final int TOP_NAV_HEIGHT_DEFAULT_DP = 66;
     public static final int TOP_NAV_CONTENT_HEIGHT_DP = 42;
     public static final int TOP_NAV_VERTICAL_MARGIN_DEFAULT_DP = 12;

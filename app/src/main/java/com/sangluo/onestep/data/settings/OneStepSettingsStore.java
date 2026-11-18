@@ -54,6 +54,9 @@ public final class OneStepSettingsStore {
     private static final String PREF_BUILT_IN_DESKTOP_COMPONENT =
             "built_in_desktop_component";
     private static final String BUILT_IN_DESKTOP_ONE_STEP = "onestep";
+    private static final String PREF_FLOATING_BALL_ENABLED = "floating_ball_enabled";
+    private static final String PREF_FLOATING_BALL_APPS = "floating_ball_apps";
+    private static final String PREF_FLOATING_BALL_POSITION = "floating_ball_position";
 
     private final SharedPreferences preferences;
     private final SharedPreferences directBootPreferences;
@@ -225,6 +228,84 @@ public final class OneStepSettingsStore {
 
     public void saveLogRecordingEnabled(boolean enabled) {
         preferences.edit().putBoolean(PREF_LOG_RECORDING_ENABLED, enabled).apply();
+    }
+
+    public boolean isFloatingBallEnabled() {
+        return preferences.getBoolean(PREF_FLOATING_BALL_ENABLED, true);
+    }
+
+    public void saveFloatingBallEnabled(boolean enabled) {
+        preferences.edit().putBoolean(PREF_FLOATING_BALL_ENABLED, enabled).apply();
+    }
+
+    /**
+     * Raw instance keys of the floating ball's second layer. Uninstalled apps are
+     * filtered later by {@link FloatingBallAppListPolicy} against the live launcher list.
+     */
+    public List<String> loadFloatingBallAppKeys() {
+        String encoded = preferences.getString(PREF_FLOATING_BALL_APPS, null);
+        if (TextUtils.isEmpty(encoded)) {
+            return Collections.emptyList();
+        }
+        try {
+            JSONObject root = new JSONObject(encoded);
+            return readStringArray(root.optJSONArray("apps"));
+        } catch (JSONException | RuntimeException e) {
+            return Collections.emptyList();
+        }
+    }
+
+    public void saveFloatingBallAppKeys(List<String> keys) {
+        JSONArray apps = new JSONArray();
+        if (keys != null) {
+            for (String key : keys) {
+                if (!TextUtils.isEmpty(key)) {
+                    apps.put(key);
+                }
+            }
+        }
+        try {
+            JSONObject root = new JSONObject().put("version", 1).put("apps", apps);
+            preferences.edit().putString(PREF_FLOATING_BALL_APPS, root.toString()).apply();
+        } catch (JSONException e) {
+            throw new IllegalStateException("Unable to encode floating ball apps", e);
+        }
+    }
+
+    /** Saved ball position as screen ratios, or {@code null} when never dragged. */
+    public float[] loadFloatingBallPosition() {
+        String encoded = preferences.getString(PREF_FLOATING_BALL_POSITION, "");
+        if (TextUtils.isEmpty(encoded)) {
+            return null;
+        }
+        String[] parts = encoded.split(",");
+        if (parts.length != 2) {
+            return null;
+        }
+        try {
+            float x = Float.parseFloat(parts[0].trim());
+            float y = Float.parseFloat(parts[1].trim());
+            if (Float.isNaN(x) || Float.isNaN(y) || Float.isInfinite(x) || Float.isInfinite(y)) {
+                return null;
+            }
+            return new float[]{clampRatio(x), clampRatio(y)};
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    public void saveFloatingBallPosition(float xRatio, float yRatio) {
+        preferences.edit()
+                .putString(PREF_FLOATING_BALL_POSITION,
+                        clampRatio(xRatio) + "," + clampRatio(yRatio))
+                .apply();
+    }
+
+    private static float clampRatio(float value) {
+        if (Float.isNaN(value)) {
+            return 0.5f;
+        }
+        return Math.max(0f, Math.min(1f, value));
     }
 
     public ComponentName getBuiltInDesktopComponent() {

@@ -66,6 +66,24 @@ public final class SideWindowInputShieldController {
         }
     }
 
+    /**
+     * True when any visible shield intersects the given screen rect. The floating ball
+     * needs this because shields are sub-windows added after it and therefore sit above it.
+     */
+    public boolean overlaps(int left, int top, int right, int bottom) {
+        for (Shield shield : shields) {
+            if (shield == null || shield.view.getVisibility() != View.VISIBLE) {
+                continue;
+            }
+            WindowManager.LayoutParams params = shield.layoutParams;
+            if (params.x < right && params.x + params.width > left
+                    && params.y < bottom && params.y + params.height > top) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void release() {
         if (released) {
             return;

@@ -124,6 +124,7 @@ public final class SettingsPanelController {
         boolean topComponentsVisible();
         boolean statusBarSpacingEnabled();
         boolean verticalWindowLayout();
+        boolean floatingBallEnabled();
         boolean logRecordingEnabled();
         int hdmiDensity();
         int sideWindowCount();
@@ -148,6 +149,7 @@ public final class SettingsPanelController {
         void saveTopComponentsVisible(boolean visible);
         void saveStatusBarSpacingEnabled(boolean enabled);
         void saveVerticalWindowLayout(boolean enabled);
+        void saveFloatingBallEnabled(boolean enabled);
         void saveLogRecordingEnabled(boolean enabled);
         void saveHdmiDensity(int density);
         void saveSideWindowCount(int count);
@@ -200,6 +202,7 @@ public final class SettingsPanelController {
     private TextView topComponentsVisibleValueView;
     private TextView statusBarSpacingValueView;
     private TextView verticalWindowLayoutValueView;
+    private TextView floatingBallEnabledValueView;
     private TextView sideWindowCountValueView;
     private TextView topNavVerticalMarginValueView;
     private TextView oneStepTriggerAreaValueView;
@@ -209,6 +212,7 @@ public final class SettingsPanelController {
     private Switch topComponentsVisibleSwitch;
     private Switch statusBarSpacingSwitch;
     private Switch verticalWindowLayoutSwitch;
+    private Switch floatingBallEnabledSwitch;
     private Switch logRecordingEnabledSwitch;
     private TextView rootAuthorizationValueView;
     private TextView zygiskHookStatusValueView;
@@ -232,6 +236,7 @@ public final class SettingsPanelController {
     private boolean topComponentsVisible;
     private boolean statusBarSpacingEnabled;
     private boolean verticalWindowLayout;
+    private boolean floatingBallEnabled = true;
     private boolean logRecordingEnabled;
     private boolean secureWindowHookEnabled = true;
     private boolean statusBarOverlayHookEnabled;
@@ -614,6 +619,16 @@ public final class SettingsPanelController {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
         topAppListLp.topMargin = dp(12);
         list.addView(topAppListItem, topAppListLp);
+
+        LinearLayout floatingBallItem = createSwitchSettingsItem(
+                "悬浮球", "长按展开应用切换环", floatingBallEnabled,
+                this::saveFloatingBallEnabled);
+        floatingBallEnabledValueView = (TextView) floatingBallItem.getTag();
+        floatingBallEnabledSwitch = findSwitchInItem(floatingBallItem);
+        LinearLayout.LayoutParams floatingBallLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(88));
+        floatingBallLp.topMargin = dp(12);
+        list.addView(floatingBallItem, floatingBallLp);
 
         LinearLayout lauchAppWhiteLayout = createSettingsItem("launchApp白名单", "第三方桌面launchApp拦截白名单", "点击设置");
         topAppStripSpacingValueView = (TextView) lauchAppWhiteLayout.getTag();
@@ -1449,6 +1464,13 @@ public final class SettingsPanelController {
         if (verticalWindowLayoutSwitch != null
                 && verticalWindowLayoutSwitch.isChecked() != verticalWindowLayout) {
             verticalWindowLayoutSwitch.setChecked(verticalWindowLayout);
+        }
+        if (floatingBallEnabledValueView != null) {
+            floatingBallEnabledValueView.setText(formatSwitchValue(floatingBallEnabled));
+        }
+        if (floatingBallEnabledSwitch != null
+                && floatingBallEnabledSwitch.isChecked() != floatingBallEnabled) {
+            floatingBallEnabledSwitch.setChecked(floatingBallEnabled);
         }
         if (logRecordingEnabledValueView != null) {
             logRecordingEnabledValueView.setText(formatSwitchValue(logRecordingEnabled));
@@ -2337,6 +2359,7 @@ public final class SettingsPanelController {
         topComponentsVisible = callbacks.topComponentsVisible();
         statusBarSpacingEnabled = callbacks.statusBarSpacingEnabled();
         verticalWindowLayout = callbacks.verticalWindowLayout();
+        floatingBallEnabled = callbacks.floatingBallEnabled();
         logRecordingEnabled = callbacks.logRecordingEnabled();
         hdmiDensity = callbacks.hdmiDensity();
         sideWindowCount = callbacks.sideWindowCount();
@@ -2363,6 +2386,11 @@ public final class SettingsPanelController {
     private void saveStatusBarSpacingEnabled(boolean v){callbacks.saveStatusBarSpacingEnabled(v);}
     private void saveVerticalWindowLayout(boolean v){callbacks.saveVerticalWindowLayout(v);}
     private void saveLogRecordingEnabled(boolean v){callbacks.saveLogRecordingEnabled(v);}
+    private void saveFloatingBallEnabled(boolean v){
+        floatingBallEnabled = v;
+        callbacks.saveFloatingBallEnabled(v);
+        refresh();
+    }
     private void saveSideWindowCount(int v){callbacks.saveSideWindowCount(v);refresh();}
     private void pickBackgroundFromGallery(){callbacks.pickBackground();}
     private void applyCurrentListBackground(ImageView target){callbacks.applyBackground(target);}
