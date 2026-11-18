@@ -128,8 +128,8 @@ public final class SystemUiController implements AutoCloseable {
                     }
                     return true;
                 }
-/*                RootVirtualDisplayHost currentHost = (RootVirtualDisplayHost) MainActivity.embeddedHosts[mainActivity.activeMainSlot];
-                currentHost.sendKeyboardEvent(event);*/
+                RootVirtualDisplayHost currentHost = (RootVirtualDisplayHost) MainActivity.embeddedHosts[mainActivity.activeMainSlot];
+                currentHost.sendKeyboardEvent(event);
                 return false;
             });
             FrameLayout content = new FrameLayout(focusWindow.getContext());

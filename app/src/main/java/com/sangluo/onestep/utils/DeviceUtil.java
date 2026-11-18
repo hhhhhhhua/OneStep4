@@ -88,8 +88,10 @@ public class DeviceUtil {
             List<InputDevice> list = new ArrayList<>();
             try {
                 int[] inputDeviceIds = inputManager.getInputDeviceIds();
+//                Log.d(TAG, "----------设备总数：" + inputDeviceIds.length);
                 for (int inputDeviceId : inputDeviceIds) {
                     InputDevice inputDevice = inputManager.getInputDevice(inputDeviceId);
+//                    Log.d(TAG, "----------设备：" + inputDevice.toString());
                     if (inputDevice.isExternal() && isKeyboardDevice(inputDevice)){
 //                        Log.d(TAG, "找到键盘：" + inputDevice.toString());
                         list.add(inputDevice);
