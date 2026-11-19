@@ -326,6 +326,10 @@ public final class AppSearchPickerDialog {
             Collections.sort(remaining, new Comparator<Row>() {
                 @Override
                 public int compare(Row first, Row second) {
+                    // Catalog apps first; icon-less pages are an opt-in extra.
+                    if (first.app.isUnlistedEntry() != second.app.isUnlistedEntry()) {
+                        return first.app.isUnlistedEntry() ? 1 : -1;
+                    }
                     return String.CASE_INSENSITIVE_ORDER.compare(
                             first.displayName(), second.displayName());
                 }
@@ -353,6 +357,9 @@ public final class AppSearchPickerDialog {
                 }
                 if (first.row.checked != second.row.checked) {
                     return first.row.checked ? -1 : 1;
+                }
+                if (first.row.app.isUnlistedEntry() != second.row.app.isUnlistedEntry()) {
+                    return first.row.app.isUnlistedEntry() ? 1 : -1;
                 }
                 return String.CASE_INSENSITIVE_ORDER.compare(
                         first.row.displayName(), second.row.displayName());
@@ -456,6 +463,19 @@ public final class AppSearchPickerDialog {
         String displayName() {
             return app.label == null ? app.packageName : app.label;
         }
+
+        /**
+         * Pinyin of the label, prefixed for entries that have no launcher icon so the picker
+         * explains where those rows come from.
+         */
+        String subtitleText() {
+            String phonetic = pinyin == null || pinyin.equalsIgnoreCase(displayName())
+                    ? "" : pinyin;
+            if (!app.isUnlistedEntry()) {
+                return phonetic;
+            }
+            return TextUtils.isEmpty(phonetic) ? "隐藏入口" : "隐藏入口 · " + phonetic;
+        }
     }
 
     private final class RowAdapter extends RecyclerView.Adapter<RowHolder> {
@@ -525,13 +545,10 @@ public final class AppSearchPickerDialog {
             holder.itemView.setBackgroundColor(row.checked
                     ? SELECTED_ROW_COLOR : 0x00000000);
             row.resolveKeys();
-            if (!TextUtils.isEmpty(row.pinyin)
-                    && !row.pinyin.equalsIgnoreCase(row.displayName())) {
-                holder.subtitle.setText(row.pinyin);
-                holder.subtitle.setVisibility(View.VISIBLE);
-            } else {
-                holder.subtitle.setVisibility(View.GONE);
-            }
+            String subtitleText = row.subtitleText();
+            holder.subtitle.setText(subtitleText);
+            holder.subtitle.setVisibility(TextUtils.isEmpty(subtitleText)
+                    ? View.GONE : View.VISIBLE);
         }
 
         @Override

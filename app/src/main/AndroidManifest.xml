@@ -20,6 +20,8 @@
     <uses-permission android:name="android.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY" tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The floating-ball picker also offers installed pages that publish no launcher icon. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <queries>
         <package android:name="com.autonavi.minimap" />
         <package android:name="me.weishu.kernelsu" />

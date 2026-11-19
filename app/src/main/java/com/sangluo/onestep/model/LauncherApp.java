@@ -3,13 +3,18 @@ package com.sangluo.onestep.model;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.os.Process;
 import android.os.UserHandle;
+import android.provider.Settings;
 
 import com.sangluo.onestep.hook.OneStepPrimaryHomePolicy;
 
 /** Immutable launcher entry displayed by the desktop and window switcher. */
 public final class LauncherApp {
+    /** Synthetic class name that keys a picker-only entry without a real launcher activity. */
+    private static final String UNLISTED_ENTRY_CLASS = "#unlisted-entry";
+
     public final String label;
     public final String packageName;
     public final ComponentName componentName;
@@ -17,6 +22,7 @@ public final class LauncherApp {
     public final UserHandle userHandle;
     private final boolean systemHome;
     private final String launchCategory;
+    private final Intent unlistedEntryIntent;
 
     public LauncherApp(String label, ComponentName componentName, Drawable icon) {
         this(label, componentName, icon, Process.myUserHandle());
@@ -38,13 +44,30 @@ public final class LauncherApp {
                 Process.myUserHandle(), systemHome);
     }
 
-    private LauncherApp(String label, ComponentName componentName, Drawable icon,
-                        String launchCategory) {
-        this(label, componentName, icon, launchCategory, Process.myUserHandle(), false);
+    /**
+     * A picker-only entry: an installed app page that publishes no launcher icon. It is keyed
+     * by package, so a saved floating-ball slot survives activity renames in later versions.
+     */
+    public static LauncherApp createUnlistedEntry(
+            String label, String packageName, Drawable icon, Intent launchIntent) {
+        return new LauncherApp(label, new ComponentName(packageName, UNLISTED_ENTRY_CLASS),
+                icon, null, Process.myUserHandle(), false, new Intent(launchIntent));
+    }
+
+    /** Fallback target for entries the app guards with a permission OneStep does not hold. */
+    public static Intent createAppInfoIntent(String packageName) {
+        return new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", packageName, null));
     }
 
     private LauncherApp(String label, ComponentName componentName, Drawable icon,
                         String launchCategory, UserHandle userHandle, boolean systemHome) {
+        this(label, componentName, icon, launchCategory, userHandle, systemHome, null);
+    }
+
+    private LauncherApp(String label, ComponentName componentName, Drawable icon,
+                        String launchCategory, UserHandle userHandle, boolean systemHome,
+                        Intent unlistedEntryIntent) {
         this.label = label;
         this.componentName = componentName;
         this.packageName = componentName.getPackageName();
@@ -52,6 +75,17 @@ public final class LauncherApp {
         this.userHandle = userHandle == null ? Process.myUserHandle() : userHandle;
         this.systemHome = systemHome;
         this.launchCategory = launchCategory;
+        this.unlistedEntryIntent = unlistedEntryIntent;
+    }
+
+    /** True for picker-only entries that {@code LauncherApps} never reports. */
+    public boolean isUnlistedEntry() {
+        return unlistedEntryIntent != null;
+    }
+
+    public boolean opensAppInfo() {
+        return isUnlistedEntry() && Settings.ACTION_APPLICATION_DETAILS_SETTINGS.equals(
+                unlistedEntryIntent.getAction());
     }
 
     public Intent createLaunchIntent() {
@@ -59,6 +93,9 @@ public final class LauncherApp {
     }
 
     public Intent createLaunchIntent(boolean primaryHomeEnhancementActive) {
+        if (unlistedEntryIntent != null) {
+            return new Intent(unlistedEntryIntent);
+        }
         boolean enhancedHomeLaunch = isHomeEntry() && primaryHomeEnhancementActive;
         Intent intent = new Intent(Intent.ACTION_MAIN)
                 .addCategory(enhancedHomeLaunch

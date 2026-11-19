@@ -295,6 +295,10 @@ public class MainActivity extends Activity {
     private PendingImageSharePromotion pendingImageSharePromotion;
 
     private List<LauncherApp> launcherApps = Collections.emptyList();
+    /** Picker-only app pages without a launcher icon; never rendered on the desktop. */
+    private List<LauncherApp> unlistedEntryApps = Collections.emptyList();
+    private boolean unlistedEntryAppsLoading;
+    private boolean unlistedEntryAppsPendingReload;
     private List<LauncherApp> orderedTopAppCandidates = Collections.emptyList();
     private List<LauncherApp> topAppStripApps = Collections.emptyList();
     private Set<String> selectedTopAppInstanceKeys = Collections.emptySet();
@@ -1003,6 +1007,8 @@ public class MainActivity extends Activity {
         recordHostDisplaySize();
         fullHomeInitialized = true;
         requestLauncherAppLoad("initial HOME load", LAUNCHER_APP_LOAD_CACHED);
+        // Keeps ball slots that point at icon-less app pages resolvable after a restart.
+        loadUnlistedEntryAppsAsync(false);
         mainHandler.postDelayed(this::releaseDirectBootBridgePrewarmHost,
                 DIRECT_BOOT_BRIDGE_PREWARM_RELEASE_DELAY_MS);
         if (activityLifecycleResumed) {
@@ -1737,6 +1743,11 @@ public class MainActivity extends Activity {
             Log.i(TAG, "Loaded launcher apps: reason=" + reason
                     + ", mode=" + loadMode + ", count=" + refreshedApps.size()
                     + ", elapsedMs=" + (SystemClock.elapsedRealtime() - startedAt));
+            if (loadMode == LAUNCHER_APP_LOAD_RELOAD && launcherAppRepository != null) {
+                // A package was installed, replaced or removed: rescan icon-less pages too.
+                launcherAppRepository.invalidateUnlistedEntryApps();
+                loadUnlistedEntryAppsAsync(true);
+            }
         } else if (error != null) {
             Log.w(TAG, "Loading launcher apps failed: reason=" + reason, error);
         }
@@ -9980,6 +9991,10 @@ public class MainActivity extends Activity {
 
             @Override
             public void onOpenApp(LauncherApp app) {
+                if (app != null && app.opensAppInfo()) {
+                    openUnlistedEntryAppInfo(app);
+                    return;
+                }
                 int slot = !multiWindowMode ? findSlot(app) : -1;
                 if (slot >= 0) {
                     focusSlotFromBall(slot, app);
@@ -10126,9 +10141,16 @@ public class MainActivity extends Activity {
             return;
         }
         List<String> savedKeys = settingsStore.loadFloatingBallAppKeys();
-        List<String> availableKeys = new ArrayList<>(launcherApps.size());
+        List<String> availableKeys = new ArrayList<>(
+                launcherApps.size() + unlistedEntryApps.size());
         Map<String, LauncherApp> appsByKey = new HashMap<>();
         for (LauncherApp app : launcherApps) {
+            availableKeys.add(app.instanceKey());
+            appsByKey.put(app.instanceKey(), app);
+        }
+        // Entries without a launcher icon are selectable from the ball, so their saved keys
+        // must survive reconciliation as well.
+        for (LauncherApp app : unlistedEntryApps) {
             availableKeys.add(app.instanceKey());
             appsByKey.put(app.instanceKey(), app);
         }
@@ -10157,11 +10179,15 @@ public class MainActivity extends Activity {
     }
 
     private void showFloatingBallAppPicker() {
-        if (launcherApps.isEmpty()) {
+        loadUnlistedEntryAppsBlocking();
+        List<LauncherApp> candidates = new ArrayList<>(
+                launcherApps.size() + unlistedEntryApps.size());
+        candidates.addAll(launcherApps);
+        candidates.addAll(unlistedEntryApps);
+        if (candidates.isEmpty()) {
             Toast.makeText(this, "未找到可添加的应用", Toast.LENGTH_SHORT).show();
             return;
         }
-        final List<LauncherApp> candidates = new ArrayList<>(launcherApps);
         candidates.sort((first, second) -> String.CASE_INSENSITIVE_ORDER.compare(
                 first.label == null ? "" : first.label,
                 second.label == null ? "" : second.label));
@@ -10177,6 +10203,82 @@ public class MainActivity extends Activity {
                         floatingBallController.setSuppressed(false);
                     }
                 });
+    }
+
+    /**
+     * Warms the picker-only catalog in the background; the picker blocks only when the user
+     * opens it before the scan finished.
+     */
+    private void loadUnlistedEntryAppsAsync(boolean invalidateCache) {
+        if (activityDestroyed || launcherAppRepository == null) {
+            return;
+        }
+        if (unlistedEntryAppsLoading) {
+            // The running scan may predate a package change; repeat it once it finishes.
+            unlistedEntryAppsPendingReload |= invalidateCache;
+            return;
+        }
+        unlistedEntryAppsLoading = true;
+        final LauncherAppRepository repository = launcherAppRepository;
+        try {
+            launcherIconExecutor.execute(() -> {
+                List<LauncherApp> loaded;
+                try {
+                    loaded = repository.loadUnlistedEntryApps(invalidateCache);
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "Loading picker-only app pages failed", e);
+                    loaded = Collections.emptyList();
+                }
+                List<LauncherApp> result = loaded;
+                mainHandler.post(() -> finishUnlistedEntryAppLoad(result));
+            });
+        } catch (RuntimeException e) {
+            unlistedEntryAppsLoading = false;
+            Log.w(TAG, "Unable to schedule picker-only app page load", e);
+        }
+    }
+
+    private void finishUnlistedEntryAppLoad(List<LauncherApp> loaded) {
+        unlistedEntryAppsLoading = false;
+        if (activityDestroyed) {
+            return;
+        }
+        unlistedEntryApps = loaded == null ? Collections.emptyList() : loaded;
+        reconcileFloatingBallApps();
+        refreshFloatingBallSlot();
+        if (unlistedEntryAppsPendingReload) {
+            unlistedEntryAppsPendingReload = false;
+            loadUnlistedEntryAppsAsync(true);
+        }
+    }
+
+    /** Last-resort synchronous scan so the picker never silently drops these rows. */
+    private void loadUnlistedEntryAppsBlocking() {
+        if (!unlistedEntryApps.isEmpty() || launcherAppRepository == null) {
+            return;
+        }
+        try {
+            unlistedEntryApps = launcherAppRepository.loadUnlistedEntryApps(false);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Loading picker-only app pages failed", e);
+            return;
+        }
+        reconcileFloatingBallApps();
+    }
+
+    /**
+     * Pages gated behind a permission OneStep does not hold cannot be embedded; send the user
+     * to the app's info screen instead of failing inside a slot.
+     */
+    private void openUnlistedEntryAppInfo(LauncherApp app) {
+        Intent intent = app.createLaunchIntent();
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(intent);
+        } catch (ActivityNotFoundException | SecurityException e) {
+            Log.w(TAG, "Unable to open app info for " + app.packageName, e);
+            Toast.makeText(this, "无法打开该应用详情", Toast.LENGTH_SHORT).show();
+        }
     }
 
 }

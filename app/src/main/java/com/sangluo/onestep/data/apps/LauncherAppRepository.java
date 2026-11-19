@@ -3,10 +3,12 @@ package com.sangluo.onestep.data.apps;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ComponentName;
+import android.content.pm.ActivityInfo;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Process;
 import android.os.SystemClock;
@@ -20,7 +22,11 @@ import com.sangluo.onestep.model.LauncherApp;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -43,6 +49,12 @@ public final class LauncherAppRepository {
     private final LauncherApps launcherApps;
     private final UserManager userManager;
     private final SystemThemedIconLoader themedIconLoader;
+    private volatile List<LauncherApp> cachedUnlistedEntryApps;
+    /**
+     * Kept apart from {@link #APP_LOAD_LOCK}: the picker may load this list on the main thread
+     * and must not wait behind a full desktop icon rescan.
+     */
+    private final Object unlistedEntryLock = new Object();
 
     public LauncherAppRepository(Context context) {
         this.context = context.getApplicationContext();
@@ -96,6 +108,139 @@ public final class LauncherAppRepository {
             return new ArrayList<>(cached);
         }
         return loadLauncherApps(false, true);
+    }
+
+    /**
+     * Lists installed entry points that {@link LauncherApps} never reports: pages an app
+     * publishes with an explicit {@code ACTION_MAIN} filter but no launcher icon (module
+     * settings, OEM feature screens, hidden maintenance pages).
+     *
+     * <p>Only the floating ball's "add app" picker consumes this list. The desktop catalog and
+     * the top app strip stay driven by {@link #loadLauncherApps()}.</p>
+     */
+    public List<LauncherApp> loadUnlistedEntryApps() {
+        return loadUnlistedEntryApps(false);
+    }
+
+    public List<LauncherApp> loadUnlistedEntryApps(boolean invalidateCache) {
+        List<LauncherApp> cached = cachedUnlistedEntryApps;
+        if (cached != null && !invalidateCache) {
+            return new ArrayList<>(cached);
+        }
+        synchronized (unlistedEntryLock) {
+            cached = cachedUnlistedEntryApps;
+            if (cached != null && !invalidateCache) {
+                return new ArrayList<>(cached);
+            }
+            List<LauncherApp> apps = queryUnlistedEntryApps();
+            cachedUnlistedEntryApps = Collections.unmodifiableList(new ArrayList<>(apps));
+            Log.i(TAG, "Loaded unlisted entry apps: count=" + apps.size());
+            return apps;
+        }
+    }
+
+    /** Drops the cached picker list, e.g. after a package was installed or removed. */
+    public void invalidateUnlistedEntryApps() {
+        cachedUnlistedEntryApps = null;
+    }
+
+    private List<LauncherApp> queryUnlistedEntryApps() {
+        Set<String> launcherPackages = new HashSet<>();
+        for (LauncherActivityEntry entry : queryLauncherActivities(null)) {
+            launcherPackages.add(entry.componentName().getPackageName());
+        }
+
+        // No category on the query: module settings pages declare MODULE_SETTINGS or no
+        // category at all, and MATCH_DEFAULT_ONLY would skip both.
+        List<ResolveInfo> entries;
+        try {
+            entries = packageManager.queryIntentActivities(new Intent(Intent.ACTION_MAIN), 0);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Querying unlisted entry apps failed", e);
+            return Collections.emptyList();
+        }
+
+        Map<String, ResolveInfo> preferredEntries = new LinkedHashMap<>();
+        for (ResolveInfo info : entries) {
+            ActivityInfo activityInfo = info.activityInfo;
+            if (activityInfo == null || !UnlistedEntryPolicy.isCandidate(
+                    activityInfo.exported, activityInfo.enabled, activityInfo.packageName,
+                    context.getPackageName(), launcherPackages)) {
+                continue;
+            }
+            String packageName = activityInfo.packageName;
+            ResolveInfo current = preferredEntries.get(packageName);
+            if (current != null && !UnlistedEntryPolicy.prefer(
+                    info.priority, info.isDefault, activityInfo.name,
+                    current.priority, current.isDefault, current.activityInfo.name)) {
+                continue;
+            }
+            preferredEntries.put(packageName, info);
+        }
+
+        List<LauncherApp> result = new ArrayList<>(preferredEntries.size());
+        for (ResolveInfo info : preferredEntries.values()) {
+            LauncherApp app = createUnlistedEntryApp(info);
+            if (app != null) {
+                result.add(app);
+            }
+        }
+        result.sort(Comparator.comparing(app -> app.label, String.CASE_INSENSITIVE_ORDER));
+        return result;
+    }
+
+    private LauncherApp createUnlistedEntryApp(ResolveInfo info) {
+        ActivityInfo activityInfo = info.activityInfo;
+        if (activityInfo == null || activityInfo.applicationInfo == null) {
+            return null;
+        }
+        Drawable icon;
+        try {
+            icon = themedIconLoader.loadIcon(info);
+        } catch (RuntimeException e) {
+            icon = activityInfo.applicationInfo.loadIcon(packageManager);
+        }
+        return LauncherApp.createUnlistedEntry(loadEntryLabel(info),
+                activityInfo.packageName, icon, resolveEntryIntent(activityInfo));
+    }
+
+    private String loadEntryLabel(ResolveInfo info) {
+        try {
+            CharSequence label = info.loadLabel(packageManager);
+            if (!TextUtils.isEmpty(label)) {
+                return label.toString();
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to the application label.
+        }
+        try {
+            CharSequence appLabel = info.activityInfo.applicationInfo.loadLabel(packageManager);
+            if (!TextUtils.isEmpty(appLabel)) {
+                return appLabel.toString();
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to the package name.
+        }
+        return info.activityInfo.packageName;
+    }
+
+    /**
+     * A page can guard itself with a signature permission OneStep will never hold. Such a row
+     * stays visible, but opens the app's info screen instead of retrying a launch the system
+     * would refuse.
+     */
+    private Intent resolveEntryIntent(ActivityInfo activityInfo) {
+        String requiredPermission = activityInfo.permission;
+        boolean launchable = TextUtils.isEmpty(requiredPermission)
+                || context.checkSelfPermission(requiredPermission)
+                == PackageManager.PERMISSION_GRANTED;
+        if (!launchable) {
+            return LauncherApp.createAppInfoIntent(activityInfo.packageName);
+        }
+        return new Intent(Intent.ACTION_MAIN)
+                .setComponent(new ComponentName(activityInfo.packageName, activityInfo.name))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
     }
 
     /** Reloads the installed app catalog without clearing OEM theme caches. */
