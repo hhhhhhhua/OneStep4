@@ -71,6 +71,7 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -696,8 +697,7 @@ public class MainActivity extends Activity {
     private FrameLayout topAppStripRoot;
     private LinearLayout topNavLeftControls;
     private LinearLayout topNavRightControls;
-    private ImageView topNavPageLeftControl;
-    private ImageView topNavPageRightControl;
+    private TextClock topNavClockView;
     private ImageView topNavSettingsControl;
     private ImageView topNavExpandLeftControl;
     private ImageView topNavExpandRightControl;
@@ -818,6 +818,7 @@ public class MainActivity extends Activity {
             TOP_APP_STRIP_VERTICAL_PADDING_SCALE_DEFAULT;
     private boolean topComponentsVisible = true;
     private boolean topAppListVisible = true;
+    private boolean topNavShowSeconds;
     private boolean statusBarSpacingEnabled;
     private boolean verticalWindowLayout;
     private int sideWindowCount = DEFAULT_SIDE_WINDOWS;
@@ -3741,12 +3742,16 @@ public class MainActivity extends Activity {
                 Gravity.START | Gravity.CENTER_VERTICAL);
         navRoot.addView(topNavLeftControls, leftLp);
 
-        topNavPageLeftControl = createTopNavImageControl(
-                R.drawable.top_nav_page_left, "应用列表向左");
-        topNavPageLeftControl.setOnClickListener(v -> scrollTopAppStripPage(1));
-        topNavPageRightControl = createTopNavImageControl(
-                R.drawable.top_nav_page_right, "应用列表向右");
-        topNavPageRightControl.setOnClickListener(v -> scrollTopAppStripPage(-1));
+        topNavClockView = new TextClock(this);
+        topNavClockView.setFormat24Hour(topNavShowSeconds ? "HH:mm:ss" : "HH:mm");
+        topNavClockView.setFormat12Hour(topNavShowSeconds ? "HH:mm:ss" : "HH:mm");
+        topNavClockView.setGravity(Gravity.CENTER);
+        topNavClockView.setTextColor(0xd9ffffff);
+        topNavClockView.setTypeface(Typeface.DEFAULT_BOLD);
+        topNavClockView.setShadowLayer(dp(1), 0, dp(1), 0x33000000);
+        setDpTextSize(topNavClockView, 15);
+        topNavClockView.setContentDescription("时间");
+
         topNavSettingsControl = createTopNavImageControl(
                 R.drawable.top_nav_settings, "设置");
         topNavSettingsControl.setOnClickListener(v -> showInternalSettingsPage());
@@ -3808,31 +3813,49 @@ public class MainActivity extends Activity {
         return control;
     }
 
+    private void updateTopNavClockFormat() {
+        if (topNavClockView == null) {
+            return;
+        }
+        String format = topNavShowSeconds ? "HH:mm:ss" : "HH:mm";
+        topNavClockView.setFormat24Hour(format);
+        topNavClockView.setFormat12Hour(format);
+    }
+
     private void updateTopNavigationControls() {
         if (topNavLeftControls == null || topNavRightControls == null
-                || topNavPageLeftControl == null || topNavPageRightControl == null
-                || topNavSettingsControl == null || topNavExpandLeftControl == null
+                || topNavClockView == null || topNavSettingsControl == null
+                || topNavExpandLeftControl == null
                 || topNavExpandRightControl == null) {
             return;
         }
+        updateTopNavClockFormat();
         topNavLeftControls.removeAllViews();
         topNavRightControls.removeAllViews();
         if (verticalWindowLayout || mainOnLeft) {
-            addTopNavControl(topNavLeftControls, topNavPageLeftControl);
-            addTopNavControl(topNavLeftControls, topNavPageRightControl);
-            addTopNavControl(topNavRightControls, topNavSettingsControl);
-            addTopNavControl(topNavRightControls, topNavExpandRightControl);
+            addTopNavControl(topNavLeftControls, topNavExpandLeftControl);
+            addTopNavControl(topNavLeftControls, topNavSettingsControl);
+            addTopNavClock(topNavRightControls, topNavClockView);
             return;
         }
         addTopNavControl(topNavLeftControls, topNavExpandLeftControl);
         addTopNavControl(topNavLeftControls, topNavSettingsControl);
-        addTopNavControl(topNavRightControls, topNavPageLeftControl);
-        addTopNavControl(topNavRightControls, topNavPageRightControl);
+        addTopNavClock(topNavRightControls, topNavClockView);
     }
 
     private void addTopNavControl(LinearLayout container, View control) {
         LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(
                 dp(TOP_NAV_BUTTON_SIZE_DP), dp(TOP_NAV_BUTTON_SIZE_DP));
+        if (container.getChildCount() > 0) {
+            layoutParams.leftMargin = dp(TOP_NAV_BUTTON_SPACING_DP);
+        }
+        container.addView(control, layoutParams);
+    }
+
+    /** The clock needs its natural width; a square button slot would clip "17:30". */
+    private void addTopNavClock(LinearLayout container, View control) {
+        LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(TOP_NAV_BUTTON_SIZE_DP));
         if (container.getChildCount() > 0) {
             layoutParams.leftMargin = dp(TOP_NAV_BUTTON_SPACING_DP);
         }
@@ -4585,6 +4608,7 @@ public class MainActivity extends Activity {
         topAppStripVerticalPaddingScalePct = settings.topAppStripVerticalPaddingScalePct;
         topComponentsVisible = settings.topComponentsVisible;
         topAppListVisible = settingsStore.isTopAppListVisible();
+        topNavShowSeconds = settingsStore.isTopNavShowSeconds();
         statusBarSpacingEnabled = settings.statusBarSpacingEnabled;
         verticalWindowLayout = settings.verticalWindowLayout;
         sideWindowCount = settings.sideWindowCount;
@@ -5037,6 +5061,7 @@ public class MainActivity extends Activity {
             @Override public boolean statusBarSpacingEnabled() {
                 return statusBarSpacingEnabled;
             }
+            @Override public boolean topNavShowSeconds() { return topNavShowSeconds; }
             @Override public boolean verticalWindowLayout() { return verticalWindowLayout; }
             @Override public boolean floatingBallEnabled() { return floatingBallEnabled; }
             @Override public boolean floatingBallDockingEnabled() {
@@ -5112,6 +5137,9 @@ public class MainActivity extends Activity {
             }
             @Override public void saveStatusBarSpacingEnabled(boolean enabled) {
                 MainActivity.this.saveStatusBarSpacingEnabled(enabled);
+            }
+            @Override public void saveTopNavShowSeconds(boolean showSeconds) {
+                MainActivity.this.saveTopNavShowSeconds(showSeconds);
             }
             @Override public void saveVerticalWindowLayout(boolean enabled) {
                 MainActivity.this.saveVerticalWindowLayout(enabled);
@@ -5703,6 +5731,17 @@ public class MainActivity extends Activity {
         settingsStore.saveTopAppStripVerticalPaddingScale(sanitized);
         updateSettingsPageViews();
         rebuildTopChromeContent();
+    }
+
+    private void saveTopNavShowSeconds(boolean showSeconds) {
+        if (showSeconds == topNavShowSeconds) {
+            return;
+        }
+        topNavShowSeconds = showSeconds;
+        if (settingsStore != null) {
+            settingsStore.saveTopNavShowSeconds(showSeconds);
+        }
+        updateTopNavClockFormat();
     }
 
     private void saveTopAppListVisible(boolean visible) {

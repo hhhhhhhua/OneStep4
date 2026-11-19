@@ -124,6 +124,7 @@ public final class SettingsPanelController {
         boolean topComponentsVisible();
         boolean topAppListVisible();
         boolean statusBarSpacingEnabled();
+        boolean topNavShowSeconds();
         boolean verticalWindowLayout();
         boolean floatingBallEnabled();
         boolean floatingBallDockingEnabled();
@@ -152,6 +153,7 @@ public final class SettingsPanelController {
         void saveTopComponentsVisible(boolean visible);
         void saveTopAppListVisible(boolean visible);
         void saveStatusBarSpacingEnabled(boolean enabled);
+        void saveTopNavShowSeconds(boolean showSeconds);
         void saveVerticalWindowLayout(boolean enabled);
         void saveFloatingBallEnabled(boolean enabled);
         void saveFloatingBallDockingEnabled(boolean enabled);
@@ -208,6 +210,7 @@ public final class SettingsPanelController {
     private TextView topComponentsVisibleValueView;
     private TextView topAppListVisibleValueView;
     private TextView statusBarSpacingValueView;
+    private TextView topNavShowSecondsValueView;
     private TextView verticalWindowLayoutValueView;
     private TextView floatingBallSettingsValueView;
     private TextView sideWindowCountValueView;
@@ -219,6 +222,7 @@ public final class SettingsPanelController {
     private Switch topComponentsVisibleSwitch;
     private Switch topAppListVisibleSwitch;
     private Switch statusBarSpacingSwitch;
+    private Switch topNavShowSecondsSwitch;
     private Switch verticalWindowLayoutSwitch;
     private Switch logRecordingEnabledSwitch;
     private TextView rootAuthorizationValueView;
@@ -243,6 +247,7 @@ public final class SettingsPanelController {
     private boolean topComponentsVisible;
     private boolean topAppListVisible = true;
     private boolean statusBarSpacingEnabled;
+    private boolean topNavShowSeconds;
     private boolean verticalWindowLayout;
     private boolean floatingBallEnabled = true;
     private boolean floatingBallDockingEnabled = true;
@@ -825,6 +830,8 @@ public final class SettingsPanelController {
         topComponentsVisibleLp.topMargin = dp(12);
         list.addView(topComponentsVisibleItem, topComponentsVisibleLp);
 
+        list.addView(createSettingsSectionHeader("状态栏设置"));
+
         LinearLayout statusBarSpacingItem = createSwitchSettingsItem(
                 "状态栏显示", statusBarSpacingEnabled, this::saveStatusBarSpacingEnabled);
         statusBarSpacingValueView = (TextView) statusBarSpacingItem.getTag();
@@ -833,6 +840,16 @@ public final class SettingsPanelController {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
         statusBarSpacingLp.topMargin = dp(12);
         list.addView(statusBarSpacingItem, statusBarSpacingLp);
+
+        LinearLayout topNavShowSecondsItem = createSwitchSettingsItem(
+                "时钟显示秒", "顶部时钟使用 24 小时制并显示秒", topNavShowSeconds,
+                this::saveTopNavShowSeconds);
+        topNavShowSecondsValueView = (TextView) topNavShowSecondsItem.getTag();
+        topNavShowSecondsSwitch = findSwitchInItem(topNavShowSecondsItem);
+        LinearLayout.LayoutParams topNavShowSecondsLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(88));
+        topNavShowSecondsLp.topMargin = dp(12);
+        list.addView(topNavShowSecondsItem, topNavShowSecondsLp);
 
         rootAuthorizationItem = createSettingsItem(
                 "ROOT 权限", "必需授权才可正常使用", "未授权");
@@ -1243,6 +1260,24 @@ public final class SettingsPanelController {
         return item;
     }
 
+    private LinearLayout createSettingsSectionHeader(String titleText) {
+        LinearLayout header = new LinearLayout(activity);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(20), dp(4), dp(20), 0);
+        header.setBackgroundColor(Color.TRANSPARENT);
+
+        TextView title = new TextView(activity);
+        title.setText(titleText);
+        title.setTextColor(0xff888888);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
+        setDpTextSize(title, 13);
+        header.addView(title, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return header;
+    }
+
     private LinearLayout createSettingsItem(String titleText, String valueText) {
         return createSettingsItem(titleText, null, valueText);
     }
@@ -1572,6 +1607,13 @@ public final class SettingsPanelController {
         if (statusBarSpacingSwitch != null
                 && statusBarSpacingSwitch.isChecked() != statusBarSpacingEnabled) {
             statusBarSpacingSwitch.setChecked(statusBarSpacingEnabled);
+        }
+        if (topNavShowSecondsValueView != null) {
+            topNavShowSecondsValueView.setText(formatSwitchValue(topNavShowSeconds));
+        }
+        if (topNavShowSecondsSwitch != null
+                && topNavShowSecondsSwitch.isChecked() != topNavShowSeconds) {
+            topNavShowSecondsSwitch.setChecked(topNavShowSeconds);
         }
         if (verticalWindowLayoutValueView != null) {
             verticalWindowLayoutValueView.setText(formatSwitchValue(verticalWindowLayout));
@@ -2468,6 +2510,7 @@ public final class SettingsPanelController {
         topComponentsVisible = callbacks.topComponentsVisible();
         topAppListVisible = callbacks.topAppListVisible();
         statusBarSpacingEnabled = callbacks.statusBarSpacingEnabled();
+        topNavShowSeconds = callbacks.topNavShowSeconds();
         verticalWindowLayout = callbacks.verticalWindowLayout();
         floatingBallEnabled = callbacks.floatingBallEnabled();
         floatingBallDockingEnabled = callbacks.floatingBallDockingEnabled();
@@ -2501,6 +2544,11 @@ public final class SettingsPanelController {
         refresh();
     }
     private void saveStatusBarSpacingEnabled(boolean v){callbacks.saveStatusBarSpacingEnabled(v);}
+    private void saveTopNavShowSeconds(boolean v){
+        topNavShowSeconds = v;
+        callbacks.saveTopNavShowSeconds(v);
+        refresh();
+    }
     private void saveVerticalWindowLayout(boolean v){callbacks.saveVerticalWindowLayout(v);}
     private void saveLogRecordingEnabled(boolean v){callbacks.saveLogRecordingEnabled(v);}
     private void saveFloatingBallEnabled(boolean v){

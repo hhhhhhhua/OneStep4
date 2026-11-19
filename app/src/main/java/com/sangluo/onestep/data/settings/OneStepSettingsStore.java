@@ -48,6 +48,7 @@ public final class OneStepSettingsStore {
     private static final String PREF_SIDE_WINDOW_COUNT = "side_window_count";
     private static final String PREF_TOP_NAV_VERTICAL_MARGIN_SCALE =
             "top_nav_vertical_margin_scale";
+    private static final String PREF_TOP_NAV_SHOW_SECONDS = "top_nav_show_seconds";
     private static final String PREF_TOP_NAV_HEIGHT_SCALE = "top_nav_height_scale";
     private static final String PREF_TOP_NAV_HEIGHT_LEGACY = "top_nav_height";
     private static final String PREF_LOG_RECORDING_ENABLED = "log_recording_enabled";
@@ -229,6 +230,14 @@ public final class OneStepSettingsStore {
 
     public void saveSideWindowCount(int count) {
         preferences.edit().putInt(PREF_SIDE_WINDOW_COUNT, count).apply();
+    }
+
+    public boolean isTopNavShowSeconds() {
+        return preferences.getBoolean(PREF_TOP_NAV_SHOW_SECONDS, false);
+    }
+
+    public void saveTopNavShowSeconds(boolean showSeconds) {
+        preferences.edit().putBoolean(PREF_TOP_NAV_SHOW_SECONDS, showSeconds).apply();
     }
 
     public void saveTopNavVerticalMarginScale(int scalePct) {
