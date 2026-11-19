@@ -81,7 +81,7 @@ public final class FloatingBallController {
 
         boolean isInteractionBlocked();
 
-        void onFocusSlot(int slot);
+        void onFocusSlot(int slot, LauncherApp app);
 
         /** Sends Back to the currently active main-pane slot. */
         void onBackSwipe();
@@ -796,7 +796,7 @@ public final class FloatingBallController {
                 break;
             case OPENED_APP:
                 collapse();
-                callbacks.onFocusSlot(item.slot);
+                callbacks.onFocusSlot(item.slot, item.app);
                 break;
             case PINNED_APP:
                 collapse();

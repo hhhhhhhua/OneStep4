@@ -8615,6 +8615,10 @@ public class MainActivity extends Activity {
     }
 
     private void switchMainSlot(int newMainSlot, boolean animate) {
+        switchMainSlot(newMainSlot, animate, null);
+    }
+
+    private void switchMainSlot(int newMainSlot, boolean animate, LauncherApp fullscreenApp) {
         // TEMP diagnostics: identify every main-slot switch that happens while a
         // swipe-kill is settling so the unwanted 1->2 promotion can be traced.
         if (SystemClock.uptimeMillis() < edgeKillKeepEdgeUntilUptime) {
@@ -8626,9 +8630,16 @@ public class MainActivity extends Activity {
             Log.d(TAG, "edgeBack: switchMainSlot " + activeMainSlot + "->" + newMainSlot
                     + " via " + sb);
         }
+        if (fullscreenApp != null && !canFocusFullscreenApp(newMainSlot, fullscreenApp)) {
+            return;
+        }
         if (newMainSlot >= 0 && newMainSlot < MAX_WINDOWS
                 && newMainSlot != activeMainSlot && isMainPaneSlot(newMainSlot)) {
-            activateMainPane(newMainSlot, true);
+            if (activateMainPane(newMainSlot, true) && fullscreenApp != null) {
+                applyWindowLayoutWithMainSizeRefresh(
+                        needsMainSizeRefreshForCurrentLayout("fullscreen slot switch"));
+                refreshFloatingBallSlot();
+            }
             return;
         }
         if (newMainSlot < 0 || newMainSlot >= MAX_WINDOWS
@@ -8665,14 +8676,15 @@ public class MainActivity extends Activity {
                             return;
                         }
                         finishMainSlotSwitchAfterPolicy(switchGeneration, oldMainSlot,
-                                newMainSlot, animate);
+                                newMainSlot, animate, fullscreenApp);
                     },
                     () -> rejectMainSlotSwitch(switchGeneration, oldMainSlot, newMainSlot,
-                            "IME policy was not confirmed", "输入法显示策略设置失败，请重试"));
+                            fullscreenApp, "IME policy was not confirmed",
+                            "输入法显示策略设置失败，请重试"));
             return;
         }
         finishMainSlotSwitchAfterPolicy(switchGeneration, oldMainSlot,
-                newMainSlot, animate);
+                newMainSlot, animate, fullscreenApp);
     }
 
     private void clearPendingMainSlotSwitch() {
@@ -8681,7 +8693,8 @@ public class MainActivity extends Activity {
     }
 
     private void finishMainSlotSwitchAfterPolicy(int switchGeneration, int oldMainSlot,
-                                                 int newMainSlot, boolean animate) {
+                                                 int newMainSlot, boolean animate,
+                                                 LauncherApp fullscreenApp) {
         if (switchGeneration != mainSlotSwitchGeneration
                 || activeMainSlot != oldMainSlot) {
             clearPendingMainPromotionContent(newMainSlot);
@@ -8707,7 +8720,7 @@ public class MainActivity extends Activity {
                 return;
             }
             if (!completeMainSlotSwitch(oldMainSlot, newMainSlot, animate, transferFocus,
-                    keepSideEdge)) {
+                    keepSideEdge, fullscreenApp)) {
                 clearPendingMainPromotionContent(newMainSlot);
                 clearPendingMainSlotSwitch();
                 scheduleDeferredWindowSwitchWorkFlush();
@@ -8801,6 +8814,7 @@ public class MainActivity extends Activity {
     }
 
     private void rejectMainSlotSwitch(int switchGeneration, int oldMainSlot, int newMainSlot,
+                                      LauncherApp fullscreenApp,
                                       String logReason, String userMessage) {
         if (switchGeneration != mainSlotSwitchGeneration) {
             clearPendingMainPromotionContent(newMainSlot);
@@ -8811,8 +8825,9 @@ public class MainActivity extends Activity {
         clearPendingMainPromotionContent(newMainSlot);
         clearPendingMainSlotSwitch();
         scheduleDeferredWindowSwitchWorkFlush();
-        if (activityDestroyed || suppressEmbeddedStarts || exitOneStepPending
-                || activeMainSlot != oldMainSlot) {
+        if (activityDestroyed || exitOneStepPending || activeMainSlot != oldMainSlot
+                || (fullscreenApp == null ? suppressEmbeddedStarts
+                : !canFocusFullscreenApp(newMainSlot, fullscreenApp))) {
             return;
         }
         if (embeddedSlotClosing[newMainSlot]) {
@@ -8829,14 +8844,13 @@ public class MainActivity extends Activity {
     }
 
     private boolean completeMainSlotSwitch(int oldMainSlot, int newMainSlot, boolean animate,
-                                           Runnable onLayoutSettled) {
-        return completeMainSlotSwitch(oldMainSlot, newMainSlot, animate, onLayoutSettled, false);
-    }
-
-    private boolean completeMainSlotSwitch(int oldMainSlot, int newMainSlot, boolean animate,
-                                           Runnable onLayoutSettled, boolean keepSideEdge) {
-        if (activityDestroyed || suppressEmbeddedStarts || exitOneStepPending
-                || activeMainSlot != oldMainSlot
+                                           Runnable onLayoutSettled, boolean keepSideEdge,
+                                           LauncherApp fullscreenApp) {
+        // A fullscreen selection only promotes an existing app; it must not resume
+        // background embedded starts that were suspended when exiting OneStep mode.
+        if (activityDestroyed || exitOneStepPending || activeMainSlot != oldMainSlot
+                || (fullscreenApp == null ? suppressEmbeddedStarts
+                : !canFocusFullscreenApp(newMainSlot, fullscreenApp))
                 || newMainSlot < 0 || newMainSlot >= MAX_WINDOWS
                 || newMainSlot == oldMainSlot || embeddedSlotClosing[newMainSlot]
                 || (windowApps[newMainSlot] == null
@@ -8870,19 +8884,22 @@ public class MainActivity extends Activity {
         }
         // Whichever promotion path wins the race after a kill, honor the freeze
         // window so the slot list never jumps to the opposite edge.
-        boolean keepEdge = keepSideEdge
+        boolean keepEdge = fullscreenApp != null || keepSideEdge
                 || SystemClock.uptimeMillis() < edgeKillKeepEdgeUntilUptime;
         if (!dualMainLayout && !keepEdge) {
             mainOnLeft = !mainOnLeft;
         }
         updateTopNavigationControls();
         applyWindowLayout(animate, () -> {
-            startPendingMainAppAfterPromotion(newMainSlot);
-            showPendingInternalSettingsAfterPromotion(newMainSlot);
-            showPendingDesktopHomeAfterPromotion(newMainSlot);
+            if (fullscreenApp == null) {
+                startPendingMainAppAfterPromotion(newMainSlot);
+                showPendingInternalSettingsAfterPromotion(newMainSlot);
+                showPendingDesktopHomeAfterPromotion(newMainSlot);
+            }
             refreshEmbeddedSlotsAfterRoleChange(oldMainSlot, newMainSlot);
-            LauncherApp newMainApp = windowApps[newMainSlot];
-            if (hasRoutedLaunchIntent(newMainApp)) {
+            if (fullscreenApp != null) {
+                refreshFloatingBallSlot();
+            } else if (hasRoutedLaunchIntent(windowApps[newMainSlot])) {
                 syncEmbeddedSlot(newMainSlot);
             }
             if (onLayoutSettled != null) {
@@ -9952,8 +9969,8 @@ public class MainActivity extends Activity {
             }
 
             @Override
-            public void onFocusSlot(int slot) {
-                focusSlotFromBall(slot);
+            public void onFocusSlot(int slot, LauncherApp app) {
+                focusSlotFromBall(slot, app);
             }
 
             @Override
@@ -9963,7 +9980,12 @@ public class MainActivity extends Activity {
 
             @Override
             public void onOpenApp(LauncherApp app) {
-                addOrFocusApp(app);
+                int slot = !multiWindowMode ? findSlot(app) : -1;
+                if (slot >= 0) {
+                    focusSlotFromBall(slot, app);
+                } else {
+                    addOrFocusApp(app);
+                }
             }
 
             @Override
@@ -10065,20 +10087,37 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void focusSlotFromBall(int slot) {
-        if (activityDestroyed || slot < 0 || slot >= MAX_WINDOWS
-                || windowApps[slot] == null || embeddedSlotClosing[slot]) {
+    private void focusSlotFromBall(int slot, LauncherApp app) {
+        if (activityDestroyed || !matchesBallSlot(slot, app)) {
             return;
         }
-        if (isWindowAnimationRunning() || mainSlotSwitchPendingSlot >= 0
-                || mainContentReplacementPendingSlot >= 0) {
+        if (exitOneStepPending || isCrossAppRouteUiBusy()) {
             Toast.makeText(this, "正在切换窗口，请稍后再试", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (isMainPaneSlot(slot)) {
+        if (isMainPaneSlot(slot) && (multiWindowMode || slot == activeMainSlot)) {
             activateMainPane(slot, true);
+        } else if (!multiWindowMode) {
+            switchMainSlot(slot, true, app);
         } else {
             swapWithMain(slot);
+        }
+    }
+
+    private boolean matchesBallSlot(int slot, LauncherApp app) {
+        return slot >= 0 && slot < MAX_WINDOWS && app != null
+                && !embeddedSlotClosing[slot] && isWindowSlotEnabled(slot)
+                && app.isSameInstance(windowApps[slot]);
+    }
+
+    private boolean canFocusFullscreenApp(int slot, LauncherApp app) {
+        return !multiWindowMode && !exitOneStepPending && matchesBallSlot(slot, app)
+                && embeddedHosts[slot] != null;
+    }
+
+    private void refreshFloatingBallSlot() {
+        if (floatingBallController != null) {
+            floatingBallController.refresh();
         }
     }
 
