@@ -42,9 +42,13 @@ public final class FloatingBallController {
     private static final String TAG = "OneStep40_FloatingBall";
     private static final float DEFAULT_Y_RATIO = 0.82f;
     private static final float BALL_EDGE_MARGIN_DP = 8f;
+    /** Visible-side inset used when auto-docking is disabled. */
+    private static final float FULL_VISIBLE_SIDE_INSET_DP = 8f;
     /** Idle time before the ball slides back to the edge, leaving half of it visible. */
     private static final long AUTO_DOCK_DELAY_MS = 3000L;
     private static final long DOCK_ANIM_MS = 180L;
+    private static final long BACK_SWIPE_MAX_DURATION_MS = 500L;
+    private static final float BACK_SWIPE_MIN_DISTANCE_DP = 56f;
     private static final long ATTACH_RETRY_MS = 100L;
     private static final long RAISE_THROTTLE_MS = 250L;
     /**
@@ -61,6 +65,10 @@ public final class FloatingBallController {
     public interface Callbacks {
         boolean isEnabled();
 
+        boolean isDockingEnabled();
+
+        int ballOpacityPercent();
+
         /** Snapshot of apps currently hosted in OneStep slots, in visual order. */
         List<FloatingBallItem> openedAppItems();
 
@@ -74,6 +82,9 @@ public final class FloatingBallController {
         boolean isInteractionBlocked();
 
         void onFocusSlot(int slot);
+
+        /** Sends Back to the currently active main-pane slot. */
+        void onBackSwipe();
 
         void onOpenApp(LauncherApp app);
 
@@ -119,6 +130,7 @@ public final class FloatingBallController {
 
     private float downRawX;
     private float downRawY;
+    private long downEventTime;
     private float lastRawX;
     private float lastRawY;
     private float relightAnchorX;
@@ -166,6 +178,7 @@ public final class FloatingBallController {
             positionYRatio = saved[1];
         }
         ball = new FloatingBallView(activity);
+        ball.setAlpha(opacityAlpha());
         ball.setBallTouchListener(this::onBallTouch);
         ballParams = createBallParams();
         overlay = new FloatingBallOverlayView(activity);
@@ -173,6 +186,7 @@ public final class FloatingBallController {
         overlay.setTouchListener(this::onOverlayTouch);
         overlayParams = createOverlayParams();
         refresh();
+        onSettingsChanged();
     }
 
     public void detach() {
@@ -305,13 +319,14 @@ public final class FloatingBallController {
             collapse();
             cancelAutoDock();
             cancelDockAnimation();
-            docked = true;
+            docked = callbacks.isDockingEnabled();
             removeBallWindow();
             return;
         }
         ensureWindows();
         ball.setIcon(callbacks.collapsedIcon());
         ball.setContentLabel(callbacks.collapsedLabel());
+        ball.setAlpha(opacityAlpha());
         ball.setBadgeCount(callbacks.openedAppItems().size());
         if (state == State.IDLE && (dockAnimator == null || !dockAnimator.isRunning())) {
             applyBallPosition();
@@ -372,6 +387,34 @@ public final class FloatingBallController {
         refresh();
     }
 
+    /** Apply the latest persisted visual and docking settings immediately. */
+    public void onSettingsChanged() {
+        if (ball == null) {
+            return;
+        }
+        ball.setAlpha(opacityAlpha());
+        boolean shouldDock = callbacks.isDockingEnabled();
+        if (!shouldDock) {
+            cancelAutoDock();
+            cancelDockAnimation();
+            docked = false;
+            setBallWindowPosition(fullVisibleLeft(), ballTop(), false);
+        } else if (state == State.IDLE) {
+            if (docked) {
+                applyBallPosition();
+            } else {
+                scheduleAutoDock();
+            }
+        }
+    }
+
+    private float opacityAlpha() {
+        int opacity = Math.max(OneStepSettings.FLOATING_BALL_OPACITY_MIN,
+                Math.min(OneStepSettings.FLOATING_BALL_OPACITY_MAX,
+                        callbacks.ballOpacityPercent()));
+        return opacity / 100f;
+    }
+
     public boolean isTouchOnBall(float rawX, float rawY) {
         if (ball == null || !ballWindowAttached || ball.getWidth() <= 0) {
             return false;
@@ -429,6 +472,7 @@ public final class FloatingBallController {
                 }
                 downRawX = rawX;
                 downRawY = rawY;
+                downEventTime = event.getEventTime();
                 lastRawX = rawX;
                 lastRawY = rawY;
                 state = State.PRESSED;
@@ -482,6 +526,26 @@ public final class FloatingBallController {
     }
 
     private void handleUp(float rawX, float rawY) {
+        float dx = rawX - downRawX;
+        float dy = rawY - downRawY;
+        long duration = Math.max(0L, SystemClock.uptimeMillis() - downEventTime);
+        if (dx <= -dp(BACK_SWIPE_MIN_DISTANCE_DP)
+                && Math.abs(dx) >= Math.abs(dy) * 1.25f
+                && duration <= BACK_SWIPE_MAX_DURATION_MS
+                && (state == State.PRESSED || state == State.DRAGGING)) {
+            cancelLongPress();
+            cancelAutoDock();
+            state = State.IDLE;
+            docked = false;
+            if (ball != null) {
+                ball.setPressed(false);
+                ball.performHapticFeedback(HapticFeedbackConstants.CONFIRM);
+            }
+            callbacks.onBackSwipe();
+            snapToSide();
+            scheduleAutoDock();
+            return;
+        }
         switch (state) {
             case PRESSED:
                 // Plain tap: open the ring in click-to-select mode.
@@ -852,7 +916,7 @@ public final class FloatingBallController {
     /** Left edge of the ball window while fully visible, pinned to its side. */
     private int fullVisibleLeft() {
         DisplayMetrics metrics = screenMetrics();
-        int margin = dp(BALL_EDGE_MARGIN_DP);
+        int margin = dp(FULL_VISIBLE_SIDE_INSET_DP);
         return dockedRight
                 ? Math.max(0, metrics.widthPixels - ballSizePx - margin) : margin;
     }
@@ -923,12 +987,15 @@ public final class FloatingBallController {
     private void snapToSide() {
         docked = false;
         setBallWindowPosition(fullVisibleLeft(), ballTop(), true);
+        if (!callbacks.isDockingEnabled()) {
+            cancelAutoDock();
+        }
     }
 
     /** Pulls the ball back to half-hidden whenever the user stops interacting. */
     private void scheduleAutoDock() {
         if (autoDockRunnable != null || !ballWindowAttached || !attached || suppressed
-                || docked || !callbacks.isEnabled()) {
+                || docked || !callbacks.isEnabled() || !callbacks.isDockingEnabled()) {
             return;
         }
         autoDockRunnable = () -> {

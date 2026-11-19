@@ -31,6 +31,7 @@ public final class OneStepSettingsStore {
     private static final String PREF_TOP_APP_STRIP_VERTICAL_PADDING_SCALE =
             "top_app_strip_vertical_padding_scale";
     private static final String PREF_TOP_APP_LIST_CONFIG = "top_app_list_config";
+    private static final String PREF_TOP_APP_LIST_VISIBLE = "top_app_list_visible";
     private static final String PREF_TOP_COMPONENTS_VISIBLE = "top_components_visible";
     private static final String PREF_STATUS_BAR_SPACING_ENABLED =
             "status_bar_spacing_enabled";
@@ -55,6 +56,9 @@ public final class OneStepSettingsStore {
             "built_in_desktop_component";
     private static final String BUILT_IN_DESKTOP_ONE_STEP = "onestep";
     private static final String PREF_FLOATING_BALL_ENABLED = "floating_ball_enabled";
+    private static final String PREF_FLOATING_BALL_DOCKING_ENABLED =
+            "floating_ball_docking_enabled";
+    private static final String PREF_FLOATING_BALL_OPACITY = "floating_ball_opacity";
     private static final String PREF_FLOATING_BALL_APPS = "floating_ball_apps";
     private static final String PREF_FLOATING_BALL_POSITION = "floating_ball_position";
 
@@ -203,6 +207,14 @@ public final class OneStepSettingsStore {
         }
     }
 
+    public boolean isTopAppListVisible() {
+        return preferences.getBoolean(PREF_TOP_APP_LIST_VISIBLE, true);
+    }
+
+    public void saveTopAppListVisible(boolean visible) {
+        preferences.edit().putBoolean(PREF_TOP_APP_LIST_VISIBLE, visible).apply();
+    }
+
     public void saveTopComponentsVisible(boolean visible) {
         preferences.edit().putBoolean(PREF_TOP_COMPONENTS_VISIBLE, visible).apply();
     }
@@ -236,6 +248,23 @@ public final class OneStepSettingsStore {
 
     public void saveFloatingBallEnabled(boolean enabled) {
         preferences.edit().putBoolean(PREF_FLOATING_BALL_ENABLED, enabled).apply();
+    }
+
+    public boolean isFloatingBallDockingEnabled() {
+        return preferences.getBoolean(PREF_FLOATING_BALL_DOCKING_ENABLED, true);
+    }
+
+    public void saveFloatingBallDockingEnabled(boolean enabled) {
+        preferences.edit().putBoolean(PREF_FLOATING_BALL_DOCKING_ENABLED, enabled).apply();
+    }
+
+    public int getFloatingBallOpacity() {
+        return Math.max(20, Math.min(100, preferences.getInt(PREF_FLOATING_BALL_OPACITY, 100)));
+    }
+
+    public void saveFloatingBallOpacity(int opacityPct) {
+        preferences.edit().putInt(PREF_FLOATING_BALL_OPACITY,
+                Math.max(20, Math.min(100, opacityPct))).apply();
     }
 
     /**

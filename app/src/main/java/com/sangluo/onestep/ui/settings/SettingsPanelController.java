@@ -122,9 +122,12 @@ public final class SettingsPanelController {
         int topAppStripSpacingScalePct();
         int topAppStripVerticalPaddingScalePct();
         boolean topComponentsVisible();
+        boolean topAppListVisible();
         boolean statusBarSpacingEnabled();
         boolean verticalWindowLayout();
         boolean floatingBallEnabled();
+        boolean floatingBallDockingEnabled();
+        int floatingBallOpacity();
         boolean logRecordingEnabled();
         int hdmiDensity();
         int sideWindowCount();
@@ -147,9 +150,12 @@ public final class SettingsPanelController {
         void saveTopAppStripSpacingScale(int value);
         void saveTopAppStripVerticalPaddingScale(int value);
         void saveTopComponentsVisible(boolean visible);
+        void saveTopAppListVisible(boolean visible);
         void saveStatusBarSpacingEnabled(boolean enabled);
         void saveVerticalWindowLayout(boolean enabled);
         void saveFloatingBallEnabled(boolean enabled);
+        void saveFloatingBallDockingEnabled(boolean enabled);
+        void saveFloatingBallOpacity(int opacityPct);
         void saveLogRecordingEnabled(boolean enabled);
         void saveHdmiDensity(int density);
         void saveSideWindowCount(int count);
@@ -200,9 +206,10 @@ public final class SettingsPanelController {
     private TextView topAppStripVerticalPaddingValueView;
     private TextView topAppListValueView;
     private TextView topComponentsVisibleValueView;
+    private TextView topAppListVisibleValueView;
     private TextView statusBarSpacingValueView;
     private TextView verticalWindowLayoutValueView;
-    private TextView floatingBallEnabledValueView;
+    private TextView floatingBallSettingsValueView;
     private TextView sideWindowCountValueView;
     private TextView topNavVerticalMarginValueView;
     private TextView oneStepTriggerAreaValueView;
@@ -210,9 +217,9 @@ public final class SettingsPanelController {
     private TextView logRecordingEnabledValueView;
     private TextView hdmiDensityValueView;
     private Switch topComponentsVisibleSwitch;
+    private Switch topAppListVisibleSwitch;
     private Switch statusBarSpacingSwitch;
     private Switch verticalWindowLayoutSwitch;
-    private Switch floatingBallEnabledSwitch;
     private Switch logRecordingEnabledSwitch;
     private TextView rootAuthorizationValueView;
     private TextView zygiskHookStatusValueView;
@@ -234,9 +241,12 @@ public final class SettingsPanelController {
     private int topAppStripSpacingScalePct;
     private int topAppStripVerticalPaddingScalePct;
     private boolean topComponentsVisible;
+    private boolean topAppListVisible = true;
     private boolean statusBarSpacingEnabled;
     private boolean verticalWindowLayout;
     private boolean floatingBallEnabled = true;
+    private boolean floatingBallDockingEnabled = true;
+    private int floatingBallOpacity = 100;
     private boolean logRecordingEnabled;
     private boolean secureWindowHookEnabled = true;
     private boolean statusBarOverlayHookEnabled;
@@ -426,6 +436,95 @@ public final class SettingsPanelController {
                     editor.apply();
                 })
                 .show();
+    }
+
+    private void showFloatingBallSettingsDialog() {
+        boolean enabled = callbacks.floatingBallEnabled();
+        boolean docking = callbacks.floatingBallDockingEnabled();
+        int opacity = Math.max(20, Math.min(100, callbacks.floatingBallOpacity()));
+
+        LinearLayout content = new LinearLayout(activity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(8), dp(20), dp(12));
+
+        Switch enabledSwitch = new Switch(activity);
+        enabledSwitch.setText("启用悬浮球");
+        enabledSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        enabledSwitch.setChecked(enabled);
+        content.addView(enabledSwitch, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+
+        Switch dockingSwitch = new Switch(activity);
+        dockingSwitch.setText("闲置后贴边并显示半球");
+        dockingSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        dockingSwitch.setChecked(docking);
+        content.addView(dockingSwitch, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+
+        LinearLayout opacityHeader = new LinearLayout(activity);
+        opacityHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView opacityLabel = new TextView(activity);
+        opacityLabel.setText("悬浮球透明度");
+        opacityLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        opacityHeader.addView(opacityLabel, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView opacityValue = new TextView(activity);
+        opacityValue.setText(opacity + "%");
+        opacityValue.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        opacityHeader.addView(opacityValue);
+        content.addView(opacityHeader, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(40)));
+
+        SeekBar opacitySeekBar = new SeekBar(activity);
+        opacitySeekBar.setMax(80);
+        opacitySeekBar.setProgress(opacity - 20);
+        content.addView(opacitySeekBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
+
+        AlertDialog dialog = showRoundedDialog(new AlertDialog.Builder(activity)
+                .setTitle("悬浮球设置")
+                .setView(content)
+                .setPositiveButton("完成", null));
+        enabledSwitch.setOnCheckedChangeListener((button, checked) -> {
+            callbacks.saveFloatingBallEnabled(checked);
+            floatingBallEnabled = checked;
+            refreshFloatingBallSummary();
+            dockingSwitch.setEnabled(checked);
+            opacitySeekBar.setEnabled(checked);
+        });
+        dockingSwitch.setOnCheckedChangeListener((button, checked) -> {
+            callbacks.saveFloatingBallDockingEnabled(checked);
+            floatingBallDockingEnabled = checked;
+            refreshFloatingBallSummary();
+        });
+        opacitySeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                int value = progress + 20;
+                opacityValue.setText(value + "%");
+                floatingBallOpacity = value;
+                callbacks.saveFloatingBallOpacity(value);
+                refreshFloatingBallSummary();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+        });
+        dockingSwitch.setEnabled(enabled);
+        opacitySeekBar.setEnabled(enabled);
+    }
+
+    private String getFloatingBallSummary() {
+        return (floatingBallEnabled ? "开启" : "关闭") + " · "
+                + (floatingBallDockingEnabled ? "自动贴边" : "不贴边") + " · "
+                + floatingBallOpacity + "%";
+    }
+
+    private void refreshFloatingBallSummary() {
+        if (floatingBallSettingsValueView != null) {
+            floatingBallSettingsValueView.setText(getFloatingBallSummary());
+        }
     }
 
     private void showHdmiDensityDialog() {
@@ -620,13 +719,22 @@ public final class SettingsPanelController {
         topAppListLp.topMargin = dp(12);
         list.addView(topAppListItem, topAppListLp);
 
-        LinearLayout floatingBallItem = createSwitchSettingsItem(
-                "悬浮球", "长按展开应用切换环", floatingBallEnabled,
-                this::saveFloatingBallEnabled);
-        floatingBallEnabledValueView = (TextView) floatingBallItem.getTag();
-        floatingBallEnabledSwitch = findSwitchInItem(floatingBallItem);
-        LinearLayout.LayoutParams floatingBallLp = new LinearLayout.LayoutParams(
+        LinearLayout topAppListVisibleItem = createSwitchSettingsItem(
+                "顶部应用列表", "显示顶部已配置应用快捷栏", topAppListVisible,
+                this::saveTopAppListVisible);
+        topAppListVisibleValueView = (TextView) topAppListVisibleItem.getTag();
+        topAppListVisibleSwitch = findSwitchInItem(topAppListVisibleItem);
+        LinearLayout.LayoutParams topAppListVisibleLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(88));
+        topAppListVisibleLp.topMargin = dp(12);
+        list.addView(topAppListVisibleItem, topAppListVisibleLp);
+
+        LinearLayout floatingBallItem = createSettingsItem(
+                "悬浮球", getFloatingBallSummary(), "配置");
+        floatingBallSettingsValueView = (TextView) floatingBallItem.getTag();
+        floatingBallItem.setOnClickListener(v -> showFloatingBallSettingsDialog());
+        LinearLayout.LayoutParams floatingBallLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
         floatingBallLp.topMargin = dp(12);
         list.addView(floatingBallItem, floatingBallLp);
 
@@ -1444,6 +1552,13 @@ public final class SettingsPanelController {
             topAppStripVerticalPaddingValueView.setText(
                     formatPercentValue(topAppStripVerticalPaddingScalePct));
         }
+        if (topAppListVisibleValueView != null) {
+            topAppListVisibleValueView.setText(formatSwitchValue(topAppListVisible));
+        }
+        if (topAppListVisibleSwitch != null
+                && topAppListVisibleSwitch.isChecked() != topAppListVisible) {
+            topAppListVisibleSwitch.setChecked(topAppListVisible);
+        }
         if (topComponentsVisibleValueView != null) {
             topComponentsVisibleValueView.setText(formatSwitchValue(topComponentsVisible));
         }
@@ -1465,13 +1580,7 @@ public final class SettingsPanelController {
                 && verticalWindowLayoutSwitch.isChecked() != verticalWindowLayout) {
             verticalWindowLayoutSwitch.setChecked(verticalWindowLayout);
         }
-        if (floatingBallEnabledValueView != null) {
-            floatingBallEnabledValueView.setText(formatSwitchValue(floatingBallEnabled));
-        }
-        if (floatingBallEnabledSwitch != null
-                && floatingBallEnabledSwitch.isChecked() != floatingBallEnabled) {
-            floatingBallEnabledSwitch.setChecked(floatingBallEnabled);
-        }
+        refreshFloatingBallSummary();
         if (logRecordingEnabledValueView != null) {
             logRecordingEnabledValueView.setText(formatSwitchValue(logRecordingEnabled));
         }
@@ -2357,9 +2466,12 @@ public final class SettingsPanelController {
         topAppStripSpacingScalePct = callbacks.topAppStripSpacingScalePct();
         topAppStripVerticalPaddingScalePct = callbacks.topAppStripVerticalPaddingScalePct();
         topComponentsVisible = callbacks.topComponentsVisible();
+        topAppListVisible = callbacks.topAppListVisible();
         statusBarSpacingEnabled = callbacks.statusBarSpacingEnabled();
         verticalWindowLayout = callbacks.verticalWindowLayout();
         floatingBallEnabled = callbacks.floatingBallEnabled();
+        floatingBallDockingEnabled = callbacks.floatingBallDockingEnabled();
+        floatingBallOpacity = callbacks.floatingBallOpacity();
         logRecordingEnabled = callbacks.logRecordingEnabled();
         hdmiDensity = callbacks.hdmiDensity();
         sideWindowCount = callbacks.sideWindowCount();
@@ -2383,6 +2495,11 @@ public final class SettingsPanelController {
     private void saveTopAppStripSpacingScale(int v){callbacks.saveTopAppStripSpacingScale(v);}
     private void saveTopAppStripVerticalPaddingScale(int v){callbacks.saveTopAppStripVerticalPaddingScale(v);}
     private void saveTopComponentsVisible(boolean v){callbacks.saveTopComponentsVisible(v);}
+    private void saveTopAppListVisible(boolean v){
+        topAppListVisible = v;
+        callbacks.saveTopAppListVisible(v);
+        refresh();
+    }
     private void saveStatusBarSpacingEnabled(boolean v){callbacks.saveStatusBarSpacingEnabled(v);}
     private void saveVerticalWindowLayout(boolean v){callbacks.saveVerticalWindowLayout(v);}
     private void saveLogRecordingEnabled(boolean v){callbacks.saveLogRecordingEnabled(v);}
@@ -2390,6 +2507,16 @@ public final class SettingsPanelController {
         floatingBallEnabled = v;
         callbacks.saveFloatingBallEnabled(v);
         refresh();
+    }
+    private void saveFloatingBallDockingEnabled(boolean v){
+        floatingBallDockingEnabled = v;
+        callbacks.saveFloatingBallDockingEnabled(v);
+        refreshFloatingBallSummary();
+    }
+    private void saveFloatingBallOpacity(int v){
+        floatingBallOpacity = Math.max(20, Math.min(100, v));
+        callbacks.saveFloatingBallOpacity(floatingBallOpacity);
+        refreshFloatingBallSummary();
     }
     private void saveSideWindowCount(int v){callbacks.saveSideWindowCount(v);refresh();}
     private void pickBackgroundFromGallery(){callbacks.pickBackground();}

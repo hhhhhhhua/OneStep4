@@ -1335,6 +1335,58 @@ public final class RootVirtualDisplayHost implements EmbeddedAppHost,
                 displayWidth, displayHeight, targetWidth, targetHeight);
     }
 
+    /**
+     * Floating-ball Back is intentionally blocked when the hosted task has only one
+     * Activity left. Dispatching Back at that point finishes the task and the normal
+     * task-removal recovery promotes another slot, which is not the expected behavior
+     * for this gesture.
+     */
+    public void sendBackFromFloatingBall(
+            java.util.function.Consumer<Boolean> completion) {
+        LauncherApp app = slot >= 0 && slot < MAX_WINDOWS ? windowApps[slot] : null;
+        int targetDisplayId = displayId;
+        int targetTaskId = hostedTaskId;
+        if (app == null || app.isHomeEntry() || targetDisplayId <= DEFAULT_DISPLAY_ID
+                || targetTaskId <= 0 || !isMainDisplaySlot(slot)) {
+            if (completion != null) {
+                completion.accept(false);
+            }
+            return;
+        }
+        try {
+            rootExecutor.execute(() -> {
+                ShellCommandResult activities = runPrivilegedCommand(
+                        "dumpsys activity activities", "check task before floating-ball back",
+                        false);
+                int activityCount = activities.exitCode == 0
+                        ? HostedTaskParser.findTaskActivityCount(
+                                activities.output, targetTaskId)
+                        : -1;
+                mainHandler.post(() -> {
+                    if (slot < 0 || slot >= MAX_WINDOWS || displayId != targetDisplayId
+                            || !isMainDisplaySlot(slot) || embeddedSlotClosing[slot]
+                            || windowApps[slot] == null
+                            || !app.isSameInstance(windowApps[slot])) {
+                        if (completion != null) completion.accept(false);
+                        return;
+                    }
+                    if (activityCount <= 1) {
+                        Log.i(TAG, "Floating-ball Back blocked: task=" + targetTaskId
+                                + " activityCount=" + activityCount + " slot=" + slot);
+                        if (completion != null) completion.accept(false);
+                        return;
+                    }
+                    sendBack();
+                    if (completion != null) completion.accept(true);
+                });
+            });
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Queue floating-ball Back precheck failed: "
+                    + e.getClass().getSimpleName());
+            if (completion != null) completion.accept(false);
+        }
+    }
+
     @Override
     public void sendBack() {
         if (displayId <= DEFAULT_DISPLAY_ID) {

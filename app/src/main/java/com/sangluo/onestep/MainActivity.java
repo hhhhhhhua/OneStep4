@@ -300,6 +300,8 @@ public class MainActivity extends Activity {
     private List<LauncherApp> floatingBallApps = Collections.emptyList();
     private List<String> floatingBallAppKeys = Collections.emptyList();
     private boolean floatingBallEnabled = true;
+    private boolean floatingBallDockingEnabled = true;
+    private int floatingBallOpacity = 100;
     private FloatingBallController floatingBallController;
     private List<LauncherApp> builtInDesktopApps = Collections.emptyList();
     private LauncherApp builtInDesktopApp;
@@ -815,6 +817,7 @@ public class MainActivity extends Activity {
     private int topAppStripVerticalPaddingScalePct =
             TOP_APP_STRIP_VERTICAL_PADDING_SCALE_DEFAULT;
     private boolean topComponentsVisible = true;
+    private boolean topAppListVisible = true;
     private boolean statusBarSpacingEnabled;
     private boolean verticalWindowLayout;
     private int sideWindowCount = DEFAULT_SIDE_WINDOWS;
@@ -2907,7 +2910,8 @@ public class MainActivity extends Activity {
         topChromeContent.addView(createTopNavigationBar(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, getTopNavHeight()));
         topChromeContent.addView(createTopAppStrip(), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, getTopAppStripHeight()));
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                topAppListVisible ? getTopAppStripHeight() : 0));
         FrameLayout.LayoutParams topChromeLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, getTopChromeHeight(), Gravity.TOP);
         root.addView(topChromeContainer, topChromeLp);
@@ -3417,7 +3421,7 @@ public class MainActivity extends Activity {
 
     private int getTopChromeHeight() {
         return getStatusBarSpacingHeight() + getTopMediaAreaHeight()
-                + getTopNavHeight() + getTopAppStripHeight();
+                + getTopNavHeight() + (topAppListVisible ? getTopAppStripHeight() : 0);
     }
 
     private void setTopChromeVisible(boolean visible, boolean animate) {
@@ -3473,7 +3477,8 @@ public class MainActivity extends Activity {
         topChromeContent.addView(createTopNavigationBar(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, getTopNavHeight()));
         topChromeContent.addView(createTopAppStrip(), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, getTopAppStripHeight()));
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                topAppListVisible ? getTopAppStripHeight() : 0));
 
         ViewGroup.LayoutParams rawLp = topChromeContainer.getLayoutParams();
         if (rawLp != null && rawLp.height != getTopChromeHeight()) {
@@ -4274,7 +4279,7 @@ public class MainActivity extends Activity {
     }
 
     private void showImageDragShareTargets(String mimeType) {
-        if (topAppStripRoot == null || topAppStripScrollView == null
+        if (!topAppListVisible || topAppStripRoot == null || topAppStripScrollView == null
                 || imageDragShareTargetScrollView == null) {
             return;
         }
@@ -4579,6 +4584,7 @@ public class MainActivity extends Activity {
         topAppStripSpacingScalePct = settings.topAppStripSpacingScalePct;
         topAppStripVerticalPaddingScalePct = settings.topAppStripVerticalPaddingScalePct;
         topComponentsVisible = settings.topComponentsVisible;
+        topAppListVisible = settingsStore.isTopAppListVisible();
         statusBarSpacingEnabled = settings.statusBarSpacingEnabled;
         verticalWindowLayout = settings.verticalWindowLayout;
         sideWindowCount = settings.sideWindowCount;
@@ -4588,6 +4594,8 @@ public class MainActivity extends Activity {
         logRecordingEnabled = settings.logRecordingEnabled;
         hdmiDensity = settings.hdmiDensity;
         floatingBallEnabled = settingsStore.isFloatingBallEnabled();
+        floatingBallDockingEnabled = settingsStore.isFloatingBallDockingEnabled();
+        floatingBallOpacity = settingsStore.getFloatingBallOpacity();
     }
 
     private void saveHdmiDensity(int density) {
@@ -5025,11 +5033,16 @@ public class MainActivity extends Activity {
                 return topAppStripVerticalPaddingScalePct;
             }
             @Override public boolean topComponentsVisible() { return topComponentsVisible; }
+            @Override public boolean topAppListVisible() { return topAppListVisible; }
             @Override public boolean statusBarSpacingEnabled() {
                 return statusBarSpacingEnabled;
             }
             @Override public boolean verticalWindowLayout() { return verticalWindowLayout; }
             @Override public boolean floatingBallEnabled() { return floatingBallEnabled; }
+            @Override public boolean floatingBallDockingEnabled() {
+                return floatingBallDockingEnabled;
+            }
+            @Override public int floatingBallOpacity() { return floatingBallOpacity; }
             @Override public boolean logRecordingEnabled() { return logRecordingEnabled; }
             @Override public int hdmiDensity() { return hdmiDensity; }
             @Override public int sideWindowCount() { return sideWindowCount; }
@@ -5094,6 +5107,9 @@ public class MainActivity extends Activity {
             @Override public void saveTopComponentsVisible(boolean visible) {
                 MainActivity.this.saveTopComponentsVisible(visible);
             }
+            @Override public void saveTopAppListVisible(boolean visible) {
+                MainActivity.this.saveTopAppListVisible(visible);
+            }
             @Override public void saveStatusBarSpacingEnabled(boolean enabled) {
                 MainActivity.this.saveStatusBarSpacingEnabled(enabled);
             }
@@ -5105,6 +5121,12 @@ public class MainActivity extends Activity {
             }
             @Override public void saveFloatingBallEnabled(boolean enabled) {
                 MainActivity.this.saveFloatingBallEnabled(enabled);
+            }
+            @Override public void saveFloatingBallDockingEnabled(boolean enabled) {
+                MainActivity.this.saveFloatingBallDockingEnabled(enabled);
+            }
+            @Override public void saveFloatingBallOpacity(int opacityPct) {
+                MainActivity.this.saveFloatingBallOpacity(opacityPct);
             }
             @Override public void saveHdmiDensity(int density) {
                 MainActivity.this.saveHdmiDensity(density);
@@ -5683,6 +5705,23 @@ public class MainActivity extends Activity {
         rebuildTopChromeContent();
     }
 
+    private void saveTopAppListVisible(boolean visible) {
+        if (visible == topAppListVisible) {
+            return;
+        }
+        topAppListVisible = visible;
+        if (settingsStore != null) {
+            settingsStore.saveTopAppListVisible(visible);
+        }
+        if (!visible && imageDragSessionController != null) {
+            imageDragSessionController.cancel();
+        }
+        rebuildTopChromeContent();
+        applyWindowLayout(false);
+        schedulePipDockBoundsUpdate();
+        scheduleEmbeddedSlotRefresh(true);
+    }
+
     private void saveTopComponentsVisible(boolean visible) {
         if (visible == topComponentsVisible) {
             return;
@@ -5719,6 +5758,34 @@ public class MainActivity extends Activity {
         updateSettingsPageViews();
         rebuildTopChromeContent();
         scheduleEmbeddedSlotRefresh();
+    }
+
+    private void saveFloatingBallDockingEnabled(boolean enabled) {
+        if (enabled == floatingBallDockingEnabled) {
+            return;
+        }
+        floatingBallDockingEnabled = enabled;
+        if (settingsStore != null) {
+            settingsStore.saveFloatingBallDockingEnabled(enabled);
+        }
+        if (floatingBallController != null) {
+            floatingBallController.onSettingsChanged();
+        }
+    }
+
+    private void saveFloatingBallOpacity(int opacityPct) {
+        int sanitized = Math.max(OneStepSettings.FLOATING_BALL_OPACITY_MIN,
+                Math.min(OneStepSettings.FLOATING_BALL_OPACITY_MAX, opacityPct));
+        if (sanitized == floatingBallOpacity) {
+            return;
+        }
+        floatingBallOpacity = sanitized;
+        if (settingsStore != null) {
+            settingsStore.saveFloatingBallOpacity(sanitized);
+        }
+        if (floatingBallController != null) {
+            floatingBallController.onSettingsChanged();
+        }
     }
 
     private void saveFloatingBallEnabled(boolean enabled) {
@@ -7874,6 +7941,28 @@ public class MainActivity extends Activity {
         Log.i(TAG, "Consume root launcher back");
     }
 
+    private void sendBackFromFloatingBall() {
+        if (activeMainSlot < 0 || activeMainSlot >= MAX_WINDOWS
+                || windowApps[activeMainSlot] == null) {
+            Toast.makeText(this, "当前主屏没有可返回的应用", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        EmbeddedAppHost host = embeddedHosts[activeMainSlot];
+        if (host instanceof RootVirtualDisplayHost) {
+            ((RootVirtualDisplayHost) host).sendBackFromFloatingBall(sent ->
+                    Toast.makeText(MainActivity.this,
+                            sent ? "已发送返回" : "已在当前应用最后一页，保持不退出",
+                            Toast.LENGTH_SHORT).show());
+            return;
+        }
+        if (host != null) {
+            host.sendBack();
+            Toast.makeText(this, "已发送返回", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "当前应用暂不支持返回", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private boolean sendBackToActiveMainHost() {
         if (activeMainSlot < 0 || activeMainSlot >= MAX_WINDOWS
                 || windowApps[activeMainSlot] == null) {
@@ -9784,6 +9873,16 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public boolean isDockingEnabled() {
+                return floatingBallDockingEnabled;
+            }
+
+            @Override
+            public int ballOpacityPercent() {
+                return floatingBallOpacity;
+            }
+
+            @Override
             public List<FloatingBallItem> openedAppItems() {
                 return collectOpenedAppItems();
             }
@@ -9816,6 +9915,11 @@ public class MainActivity extends Activity {
             @Override
             public void onFocusSlot(int slot) {
                 focusSlotFromBall(slot);
+            }
+
+            @Override
+            public void onBackSwipe() {
+                sendBackFromFloatingBall();
             }
 
             @Override
