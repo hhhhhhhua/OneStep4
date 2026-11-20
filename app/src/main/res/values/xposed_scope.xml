@@ -2,5 +2,6 @@
 <resources>
     <string-array name="xposed_scope" translatable="false">
         <item>android</item>
+        <item>com.coloros.colordirectservice</item>
     </string-array>
 </resources>

@@ -416,12 +416,14 @@ public final class SettingsPanelController {
                 DisPlayStringConst.DISABLE_AUDIO_CONST,
                 DisPlayStringConst.DISABLE_KEY_CONST,
                 DisPlayStringConst.RE_LAUNCH_FLAG_CONST,
+                DisPlayStringConst.USE_XIAOBU_SCREEN_CONST,
         };
         final String[] labels = {
                 "投屏时手机息屏",
                 "禁用 HDMI 音频",
                 "禁用系统快捷键",
                 "禁用配置更新app重新布局",
+                "使用小布识屏",
         };
         SharedPreferences prefs = activity.getSharedPreferences(CommonConstant.MODULE_PREFS_NAME, MODE_PRIVATE);
         final boolean[] checked = new boolean[keys.length];
@@ -439,8 +441,36 @@ public final class SettingsPanelController {
                         editor.putBoolean(keys[index], checked[index]);
                     }
                     editor.apply();
+                    int xiaobuIndex = keys.length - 1;
+                    applyXiaobuSetting();
                 })
                 .show();
+    }
+
+    /** Restarts the target process so it reloads the saved module preference. */
+    private void applyXiaobuSetting() {
+        final String command = "am force-stop com.coloros.colordirectservice";
+        new Thread(() -> {
+            boolean ok = false;
+            try {
+                com.sangluo.onestep.IShizukuCommonService service =
+                        com.sangluo.onestep.utils.ShizukuServiceUtil.getShizukuCommonService();
+                if (service != null) {
+                    ok = service.run(command, 10).exitCode == 0;
+                }
+            } catch (Throwable ignored) { }
+            if (!ok) {
+                try {
+                    Process process = new ProcessBuilder("su", "-c", command)
+                            .redirectErrorStream(true).start();
+                    ok = process.waitFor() == 0;
+                } catch (Throwable ignored) { }
+            }
+            final boolean applied = ok;
+            activity.runOnUiThread(() -> Toast.makeText(activity,
+                    applied ? "已更新，重新触发识屏生效" : "写入失败，请确认模块有 Root/Shizuku 权限",
+                    Toast.LENGTH_SHORT).show());
+        }, "onestep-xiaobu-setting").start();
     }
 
     private void showFloatingBallSettingsDialog() {

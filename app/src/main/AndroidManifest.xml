@@ -20,6 +20,9 @@
     <uses-permission android:name="android.permission.ASSOCIATE_INPUT_DEVICE_TO_DISPLAY" tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- The floating-ball picker also offers installed pages that publish no launcher icon. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <queries>
@@ -141,13 +144,23 @@
         <provider
             android:name="com.sangluo.onestep.SharedPerfsProvider"
             android:authorities="${applicationId}.prefs"
-            android:exported="true"
-            android:readPermission="com.enhancemirror.READ_SETTINGS">
+            android:exported="true">
         </provider>
         <service
             android:name=".feature.drag.ImageDragBridgeService"
             android:exported="true"
             android:stopWithTask="false" />
+        <service
+            android:name=".xiaobu.XiaobuCaptureService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="capture OneStep display for xiaobu screen recognition" />
+        </service>
+        <receiver
+            android:name=".xiaobu.XiaobuCaptureReceiver"
+            android:exported="true" />
     </application>
 
 </manifest>

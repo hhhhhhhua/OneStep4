@@ -1,6 +1,7 @@
 package com.sangluo.onestep.hook.config;
 
 
+import android.content.Context;
 import android.util.Log;
 
 import com.crossbowffs.remotepreferences.RemotePreferenceAccessException;
@@ -27,6 +28,8 @@ public class SharedConfig {
     public static boolean RE_LAUNCH_FLAG = false;
     // app是否运行在虚拟屏幕上
     public static boolean IS_VIRTUAL_DISPLAY_RUN = false;
+    // 是否启用小布识屏副屏增强
+    public static boolean USE_XIAOBU_SCREEN = false;
     public static final String START_SOFT_WARE_PACKAGE = CommonConstant.APP_PACKAGE_NAME;
 
     public static final String AUTHORITY = START_SOFT_WARE_PACKAGE + ".prefs";
@@ -36,14 +39,22 @@ public class SharedConfig {
     // docs). It is created lazily via initPrefs(), which handleLoadPackage calls.
     private static HashMap<String, Boolean> PROCESS_LOAD_STATUS = new HashMap<>();
 
-    public static void loadConfig() {
+    public static boolean loadConfig() {
+        return loadConfig(AweSomeUtil.getAnyContext());
+    }
+
+    public static boolean loadConfig(Context context) {
         String processName = AweSomeUtil.getCurrentProcessName();
         Log.d(TAG, "loadConfig 调用，进程: " + processName + ", 加载状态: " + PROCESS_LOAD_STATUS.get(processName));
 
-        RemotePreferences prefs = new RemotePreferences(AweSomeUtil.getAnyContext(), AUTHORITY, CommonConstant.MODULE_PREFS_NAME, true);
+        if (context == null) {
+            Log.w(TAG, "loadConfig skipped: context is null");
+            return false;
+        }
+        RemotePreferences prefs = new RemotePreferences(context, AUTHORITY, CommonConstant.MODULE_PREFS_NAME, true);
         if (prefs == null) {
             Log.w(TAG, "loadConfig skipped: provider not ready, keep current/default values");
-            return;
+            return false;
         }
         try {
             ENABLE_DISPLAY_CONTROL = prefs.getBoolean(DisPlayStringConst.POWER_OFF_CONST, false);
@@ -51,13 +62,16 @@ public class SharedConfig {
             ENABLE_DISABLE_KEY = prefs.getBoolean(DisPlayStringConst.DISABLE_KEY_CONST, false);
             RE_LAUNCH_FLAG = prefs.getBoolean(DisPlayStringConst.RE_LAUNCH_FLAG_CONST, false);
             IS_VIRTUAL_DISPLAY_RUN = prefs.getBoolean(DisPlayStringConst.IS_VIRTUAL_DISPLAY_RUN, false);
+            USE_XIAOBU_SCREEN = prefs.getBoolean(DisPlayStringConst.USE_XIAOBU_SCREEN_CONST, false);
             Log.i(TAG, "loadConfig ENABLED: "+ENABLED+", ENABLE_DISPLAY_CONTROL: "+ENABLE_DISPLAY_CONTROL
                     +", ENABLE_DISABLE_AUDIO: "+ENABLE_DISABLE_AUDIO
                     +", ENABLE_DISABLE_KEY: "+ENABLE_DISABLE_KEY
                     +", RE_LAUNCH_FLAG: "+RE_LAUNCH_FLAG
                     +", IS_VIRTUAL_DISPLAY_RUN: "+IS_VIRTUAL_DISPLAY_RUN
+                    +", USE_XIAOBU_SCREEN: "+USE_XIAOBU_SCREEN
             );
             PROCESS_LOAD_STATUS.put(processName, true);
+            return true;
         } catch (RemotePreferenceAccessException e) {
             // Provider unreachable / not exported / permission denied -> the "config looks all off" case.
             Log.e(TAG, "loadConfig: provider unreachable, authority=" + AUTHORITY
@@ -66,6 +80,7 @@ public class SharedConfig {
         } catch (Throwable e) {
             Log.e(TAG, "配置加载失败", e);
         }
+        return false;
     }
 
 }
