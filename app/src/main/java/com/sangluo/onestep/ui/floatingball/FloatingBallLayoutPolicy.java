@@ -26,6 +26,8 @@ public final class FloatingBallLayoutPolicy {
     public static final float NOTIFICATION_OFFSET_ITEM_RADII = 2.15f;
     /** Distance of the 放入后台 control from the switch centre, in item radii. */
     public static final float BACKGROUND_OFFSET_ITEM_RADII = 2.15f;
+    /** Distance of the 任务管理 control from the switch centre, in item radii. */
+    public static final float TASK_MANAGER_OFFSET_ITEM_RADII = 2.15f;
     /** Minimum distance a satellite keeps from the screen edge, in item radii. */
     public static final float SATELLITE_EDGE_ITEM_RADII = 1.15f;
 
@@ -127,6 +129,23 @@ public final class FloatingBallLayoutPolicy {
         float edge = itemRadiusPx * SATELLITE_EDGE_ITEM_RADII;
         float maxY = Math.max(edge, heightPx - edge);
         float target = switchCenterY - itemRadiusPx * BACKGROUND_OFFSET_ITEM_RADII;
+        return Math.max(edge, Math.min(maxY, target));
+    }
+
+    /**
+     * Horizontal centre of the 任务管理 control: below the 杀死应用 control, on the
+     * left side, mirroring the 通知 control so it never costs an app position.
+     */
+    public static float taskManagerCenterX(float switchCenterX, float itemRadiusPx) {
+        return switchCenterX - itemRadiusPx * TASK_MANAGER_OFFSET_ITEM_RADII;
+    }
+
+    /** Vertical centre of the 任务管理 control, clamped to the screen bottom edge. */
+    public static float taskManagerCenterY(float switchCenterY, float itemRadiusPx,
+                                           float heightPx) {
+        float edge = itemRadiusPx * SATELLITE_EDGE_ITEM_RADII;
+        float maxY = Math.max(edge, heightPx - edge);
+        float target = switchCenterY + itemRadiusPx * TASK_MANAGER_OFFSET_ITEM_RADII;
         return Math.max(edge, Math.min(maxY, target));
     }
 

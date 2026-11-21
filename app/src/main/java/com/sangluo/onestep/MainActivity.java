@@ -105,6 +105,7 @@ import com.sangluo.onestep.feature.logging.SessionLogRecorder;
 import com.sangluo.onestep.feature.screenshot.ScreenshotCaptureClient;
 import com.sangluo.onestep.feature.screenshot.ScreenshotEditorActivity;
 import com.sangluo.onestep.feature.tasks.RunningTaskAppResolver;
+import com.sangluo.onestep.feature.tasks.RunningTaskCatalog;
 import com.sangluo.onestep.frida.FridaBridge;
 import com.sangluo.onestep.model.LauncherApp;
 import com.sangluo.onestep.model.PinnedTaskState;
@@ -119,6 +120,7 @@ import com.sangluo.onestep.ui.floatingball.FloatingBallItem;
 import com.sangluo.onestep.ui.gesture.CornerTriggerGesturePolicy;
 import com.sangluo.onestep.ui.settings.AppSearchPickerDialog;
 import com.sangluo.onestep.ui.settings.SettingsPanelController;
+import com.sangluo.onestep.ui.tasks.TaskManagerDialog;
 import com.sangluo.onestep.ui.topbar.TopPanelController;
 import com.sangluo.onestep.ui.widget.AppShortcutView;
 import com.sangluo.onestep.ui.widget.FixedViewportFrameLayout;
@@ -10099,6 +10101,11 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onShowTaskManager() {
+                showTaskManager();
+            }
+
+            @Override
             public boolean hasNotificationAccess() {
                 return MediaNotificationListenerService.isAccessGranted(MainActivity.this);
             }
@@ -10142,6 +10149,144 @@ public class MainActivity extends Activity {
                 }
                 mainHandler.post(MainActivity.this::raiseFloatingBallAboveShields);
             }
+        });
+    }
+
+    /** Floating-ball 任务管理: list live background tasks that are not in a slot. */
+    private void showTaskManager() {
+        if (activityDestroyed || exitOneStepPending) {
+            return;
+        }
+        final List<LauncherApp> launcherSnapshot = new ArrayList<>(launcherApps);
+        final Set<String> excludedPackages = new HashSet<>();
+        for (LauncherApp app : windowApps) {
+            if (app != null) {
+                excludedPackages.add(app.packageName);
+            }
+        }
+        excludedPackages.add(getPackageName());
+        if (floatingBallController != null) {
+            floatingBallController.setSuppressed(true);
+        }
+        TaskManagerDialog dialog = TaskManagerDialog.show(this,
+                new TaskManagerDialog.Listener() {
+                    @Override
+                    public void onOpen(TaskManagerDialog.Entry entry) {
+                        openTaskManagerApp(entry);
+                    }
+
+                    @Override
+                    public void onKill(TaskManagerDialog.Entry entry,
+                                       TaskManagerDialog.KillCallback callback) {
+                        killTaskManagerApp(entry, callback);
+                    }
+                }, () -> {
+                    if (!activityDestroyed && floatingBallController != null) {
+                        floatingBallController.setSuppressed(false);
+                    }
+                });
+        mediaRootExecutor.execute(() -> {
+            // The full recents dump is large enough to hit the root shell timeout;
+            // keep only the task header and liveness lines the catalog needs.
+            ShellCommandResult result = runMainPrivilegedCommand(
+                    "dumpsys activity recents | grep -E 'Recent #|mRootProcess|affinity='",
+                    "query running apps", false);
+            boolean queryFailed = !result.isSuccess();
+            List<TaskManagerDialog.Entry> entries = queryFailed
+                    ? new ArrayList<TaskManagerDialog.Entry>()
+                    : resolveRunningTaskEntries(
+                    RunningTaskCatalog.packagesFromRecentsDump(result.output),
+                    launcherSnapshot, excludedPackages);
+            final List<TaskManagerDialog.Entry> ready = entries;
+            final boolean failed = queryFailed;
+            mainHandler.post(() -> {
+                if (activityDestroyed) {
+                    return;
+                }
+                if (failed) {
+                    Toast.makeText(this, "无法读取运行中的应用", Toast.LENGTH_SHORT).show();
+                }
+                if (dialog != null) {
+                    dialog.setEntries(ready);
+                }
+            });
+        });
+    }
+
+    private List<TaskManagerDialog.Entry> resolveRunningTaskEntries(
+            List<String> packages, List<LauncherApp> launcherSnapshot,
+            Set<String> excludedPackages) {
+        List<TaskManagerDialog.Entry> entries = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (String packageName : packages) {
+            if (TextUtils.isEmpty(packageName) || excludedPackages.contains(packageName)
+                    || !seen.add(packageName)) {
+                continue;
+            }
+            LauncherApp app = findLauncherAppByPackage(packageName, launcherSnapshot);
+            if (app == null || app.isHomeEntry() || app.isUnlistedEntry()) {
+                continue;
+            }
+            entries.add(new TaskManagerDialog.Entry(app));
+        }
+        return entries;
+    }
+
+    private LauncherApp findLauncherAppByPackage(String packageName,
+                                                 List<LauncherApp> launcherSnapshot) {
+        LauncherApp fallback = null;
+        for (LauncherApp app : launcherSnapshot) {
+            if (app == null || !TextUtils.equals(packageName, app.packageName)) {
+                continue;
+            }
+            if (app.isCurrentUser()) {
+                return app;
+            }
+            if (fallback == null) {
+                fallback = app;
+            }
+        }
+        if (fallback != null) {
+            return fallback;
+        }
+        if (launcherAppRepository == null) {
+            return null;
+        }
+        LauncherApp resolved = launcherAppRepository.loadLauncherApp(packageName);
+        if (resolved != null) {
+            return resolved;
+        }
+        List<LauncherApp> apps = launcherAppRepository.loadLauncherAppsForPackage(packageName);
+        return apps.isEmpty() ? null : apps.get(0);
+    }
+
+    private void openTaskManagerApp(TaskManagerDialog.Entry entry) {
+        if (activityDestroyed || entry == null) {
+            return;
+        }
+        addOrFocusApp(entry.app);
+    }
+
+    private void killTaskManagerApp(TaskManagerDialog.Entry entry,
+                                    TaskManagerDialog.KillCallback callback) {
+        if (entry == null || activityDestroyed) {
+            callback.onFinished(false);
+            return;
+        }
+        final String packageName = entry.app.packageName;
+        final String label = entry.app.label;
+        mediaRootExecutor.execute(() -> {
+            ShellCommandResult result = runMainPrivilegedCommand(
+                    "am force-stop " + mainShellQuote(packageName),
+                    "force-stop running app " + packageName, true);
+            mainHandler.post(() -> {
+                boolean success = result.isSuccess();
+                if (!activityDestroyed) {
+                    Toast.makeText(this, success ? "已杀死 " + label : "杀死失败：" + label,
+                            Toast.LENGTH_SHORT).show();
+                }
+                callback.onFinished(success);
+            });
         });
     }
 

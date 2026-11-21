@@ -44,6 +44,8 @@ public final class FloatingBallOverlayView extends View {
     private static final int NOTIFICATION_BACKGROUND_DARK = 0xffb57515;
     private static final int BACKGROUND_ACTION_LIGHT = 0xff8b7cf6;
     private static final int BACKGROUND_ACTION_DARK = 0xff5b49c9;
+    private static final int TASK_MANAGER_LIGHT = 0xff8bc34a;
+    private static final int TASK_MANAGER_DARK = 0xff4c7a1f;
     private static final int ITEM_STROKE = 0x55ffffff;
     private static final int HIGHLIGHT_STROKE = 0xffffffff;
     private static final int ACTIVE_MAIN_STROKE = 0xff34c759;
@@ -70,6 +72,8 @@ public final class FloatingBallOverlayView extends View {
     private final Paint notificationGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint backgroundActionBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint backgroundActionGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint taskManagerBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint taskManagerGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF labelRect = new RectF();
     private final RectF screenshotBodyRect = new RectF();
     private final Path bellPath = new Path();
@@ -86,6 +90,7 @@ public final class FloatingBallOverlayView extends View {
     private boolean screenshotHighlighted;
     private boolean notificationHighlighted;
     private boolean backgroundActionHighlighted;
+    private boolean taskManagerHighlighted;
     private float progress;
     private boolean interactive;
     private ValueAnimator animator;
@@ -146,6 +151,11 @@ public final class FloatingBallOverlayView extends View {
         backgroundActionGlyphPaint.setStrokeWidth(dp(1.9f));
         backgroundActionGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
         backgroundActionGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
+        taskManagerGlyphPaint.setStyle(Paint.Style.STROKE);
+        taskManagerGlyphPaint.setColor(Color.WHITE);
+        taskManagerGlyphPaint.setStrokeWidth(dp(1.9f));
+        taskManagerGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
+        taskManagerGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
     }
 
     public void setTouchListener(TouchListener listener) {
@@ -166,6 +176,7 @@ public final class FloatingBallOverlayView extends View {
         this.screenshotHighlighted = false;
         this.notificationHighlighted = false;
         this.backgroundActionHighlighted = false;
+        this.taskManagerHighlighted = false;
         invalidate();
     }
 
@@ -217,6 +228,14 @@ public final class FloatingBallOverlayView extends View {
         invalidate();
     }
 
+    public void setTaskManagerHighlighted(boolean highlighted) {
+        if (taskManagerHighlighted == highlighted) {
+            return;
+        }
+        taskManagerHighlighted = highlighted;
+        invalidate();
+    }
+
     public void setInteractive(boolean interactive) {
         this.interactive = interactive;
         setClickable(interactive);
@@ -241,6 +260,7 @@ public final class FloatingBallOverlayView extends View {
                 screenshotHighlighted = false;
                 notificationHighlighted = false;
                 backgroundActionHighlighted = false;
+                taskManagerHighlighted = false;
                 invalidate();
             }
         });
@@ -307,6 +327,7 @@ public final class FloatingBallOverlayView extends View {
             drawScreenshot(canvas, centers[0], centers[1]);
             drawNotification(canvas, centers[0], centers[1]);
             drawBackgroundAction(canvas, centers[0], centers[1]);
+            drawTaskManager(canvas, centers[0], centers[1]);
         }
         canvas.restoreToCount(layer);
 
@@ -469,6 +490,42 @@ public final class FloatingBallOverlayView extends View {
     }
 
     /**
+     * 任务管理 control: below the 杀死应用 control, on the left, in both layers, so it
+     * never takes a ring app slot.
+     */
+    private void drawTaskManager(Canvas canvas, float switchCx, float switchCy) {
+        float cx = FloatingBallLayoutPolicy.taskManagerCenterX(switchCx, itemRadiusPx);
+        float cy = FloatingBallLayoutPolicy.taskManagerCenterY(
+                switchCy, itemRadiusPx, getHeight());
+        float baseRadius = itemRadiusPx * 0.86f;
+        float drawRadius = taskManagerHighlighted ? baseRadius * 1.12f : baseRadius;
+
+        taskManagerBackgroundPaint.setShader(new LinearGradient(
+                cx - drawRadius, cy - drawRadius, cx + drawRadius, cy + drawRadius,
+                TASK_MANAGER_LIGHT, TASK_MANAGER_DARK, Shader.TileMode.CLAMP));
+        canvas.drawCircle(cx, cy, drawRadius, taskManagerBackgroundPaint);
+        taskManagerBackgroundPaint.setShader(null);
+        canvas.drawCircle(cx, cy, drawRadius, itemStrokePaint);
+        if (taskManagerHighlighted) {
+            canvas.drawCircle(cx, cy, drawRadius + dp(3), highlightPaint);
+        }
+        drawTaskManagerGlyph(canvas, cx, cy, drawRadius);
+    }
+
+    /** List glyph: three bulleted rows. */
+    private void drawTaskManagerGlyph(Canvas canvas, float cx, float cy, float radius) {
+        float bulletX = cx - radius * 0.34f;
+        float lineStart = cx - radius * 0.14f;
+        float lineEnd = cx + radius * 0.40f;
+        float[] offsets = {-radius * 0.26f, 0f, radius * 0.26f};
+        for (float offset : offsets) {
+            canvas.drawCircle(bulletX, cy + offset, radius * 0.055f, taskManagerGlyphPaint);
+            canvas.drawLine(lineStart, cy + offset, lineEnd, cy + offset,
+                    taskManagerGlyphPaint);
+        }
+    }
+
+    /**
      * 通知 control: below the 识屏 control, on the right, in both layers, so it never
      * takes a ring app slot.
      */
@@ -559,6 +616,7 @@ public final class FloatingBallOverlayView extends View {
                 : ocrHighlighted ? "识屏"
                 : notificationHighlighted ? "通知"
                 : backgroundActionHighlighted ? "放入后台"
+                : taskManagerHighlighted ? "任务管理"
                 : highlightedItem != null && !TextUtils.isEmpty(highlightedItem.label())
                         ? highlightedItem.label() : layerLabel;
         if (TextUtils.isEmpty(text)) {

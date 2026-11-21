@@ -108,6 +108,35 @@ public class FloatingBallLayoutPolicyTest {
     }
 
     @Test
+    public void taskManagerControlSitsBelowTheKillControl() {
+        float switchCenterX = 200f;
+        float switchCenterY = 300f;
+        float itemRadius = 20f;
+
+        assertEquals(switchCenterX - itemRadius
+                        * FloatingBallLayoutPolicy.TASK_MANAGER_OFFSET_ITEM_RADII,
+                FloatingBallLayoutPolicy.taskManagerCenterX(
+                        switchCenterX, itemRadius), DELTA);
+        assertEquals(switchCenterY + itemRadius
+                        * FloatingBallLayoutPolicy.TASK_MANAGER_OFFSET_ITEM_RADII,
+                FloatingBallLayoutPolicy.taskManagerCenterY(
+                        switchCenterY, itemRadius, 800f), DELTA);
+        assertEquals(FloatingBallLayoutPolicy.backgroundCenterX(
+                        switchCenterX, itemRadius),
+                FloatingBallLayoutPolicy.taskManagerCenterX(
+                        switchCenterX, itemRadius), DELTA);
+    }
+
+    @Test
+    public void taskManagerControlStaysInsideTheScreen() {
+        float itemRadius = 20f;
+        float edge = itemRadius * FloatingBallLayoutPolicy.SATELLITE_EDGE_ITEM_RADII;
+
+        assertEquals(800f - edge, FloatingBallLayoutPolicy.taskManagerCenterY(
+                900f, itemRadius, 800f), DELTA);
+    }
+
+    @Test
     public void notificationControlSitsBelowTheScreenRecognitionControl() {
         float switchCenterX = 200f;
         float switchCenterY = 300f;
