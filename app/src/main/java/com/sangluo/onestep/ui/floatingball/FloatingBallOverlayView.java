@@ -6,8 +6,10 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
@@ -31,6 +33,8 @@ public final class FloatingBallOverlayView extends View {
     private static final int SCRIM_COLOR = 0x66000000;
     private static final int ITEM_BACKGROUND = 0xe61f2328;
     private static final int ADD_BACKGROUND = 0xe62f7df6;
+    private static final int SCREEN_OCR_BACKGROUND_LIGHT = 0xff4cc9b8;
+    private static final int SCREEN_OCR_BACKGROUND_DARK = 0xff1c7a70;
     private static final int ITEM_STROKE = 0x55ffffff;
     private static final int HIGHLIGHT_STROKE = 0xffffffff;
     private static final int ACTIVE_MAIN_STROKE = 0xff34c759;
@@ -47,6 +51,8 @@ public final class FloatingBallOverlayView extends View {
     private final Paint glyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint labelBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint ocrBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint ocrGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF labelRect = new RectF();
 
     private List<FloatingBallItem> items = Collections.emptyList();
@@ -56,6 +62,7 @@ public final class FloatingBallOverlayView extends View {
     private float radiusPx;
     private float itemRadiusPx;
     private int highlighted = -1;
+    private boolean ocrHighlighted;
     private float progress;
     private boolean interactive;
     private ValueAnimator animator;
@@ -91,6 +98,11 @@ public final class FloatingBallOverlayView extends View {
         labelBackgroundPaint.setColor(0xcc000000);
         dotPaint.setStyle(Paint.Style.FILL);
         dotPaint.setColor(OPENED_DOT_COLOR);
+        ocrGlyphPaint.setStyle(Paint.Style.STROKE);
+        ocrGlyphPaint.setColor(Color.WHITE);
+        ocrGlyphPaint.setStrokeWidth(dp(2.2f));
+        ocrGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
+        ocrGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
     }
 
     public void setTouchListener(TouchListener listener) {
@@ -106,6 +118,7 @@ public final class FloatingBallOverlayView extends View {
         this.radiusPx = radiusPx;
         this.itemRadiusPx = itemRadiusPx;
         this.highlighted = -1;
+        this.ocrHighlighted = false;
         invalidate();
     }
 
@@ -114,6 +127,14 @@ public final class FloatingBallOverlayView extends View {
             return;
         }
         highlighted = index;
+        invalidate();
+    }
+
+    public void setOcrHighlighted(boolean highlighted) {
+        if (ocrHighlighted == highlighted) {
+            return;
+        }
+        ocrHighlighted = highlighted;
         invalidate();
     }
 
@@ -136,6 +157,7 @@ public final class FloatingBallOverlayView extends View {
                 setVisibility(GONE);
                 items = Collections.emptyList();
                 highlighted = -1;
+                ocrHighlighted = false;
                 invalidate();
             }
         });
@@ -196,6 +218,9 @@ public final class FloatingBallOverlayView extends View {
             drawItem(canvas, items.get(index), index,
                     centers[index * 2], centers[index * 2 + 1]);
         }
+        if (centers.length >= 2) {
+            drawScreenOcr(canvas, centers[0], centers[1]);
+        }
         canvas.restoreToCount(layer);
 
         drawCaption(canvas, eased);
@@ -245,11 +270,55 @@ public final class FloatingBallOverlayView extends View {
         icon.draw(canvas);
     }
 
+    /**
+     * 识屏 control: always drawn on the switch's horizontal line, to its right, in
+     * both layers, so it never takes a ring app slot.
+     */
+    private void drawScreenOcr(Canvas canvas, float switchCx, float switchCy) {
+        float cx = FloatingBallLayoutPolicy.ocrCenterX(switchCx, itemRadiusPx);
+        float cy = switchCy;
+        float baseRadius = itemRadiusPx * 0.86f;
+        float drawRadius = ocrHighlighted ? baseRadius * 1.12f : baseRadius;
+
+        ocrBackgroundPaint.setShader(new LinearGradient(
+                cx - drawRadius, cy - drawRadius, cx + drawRadius, cy + drawRadius,
+                SCREEN_OCR_BACKGROUND_LIGHT, SCREEN_OCR_BACKGROUND_DARK,
+                Shader.TileMode.CLAMP));
+        canvas.drawCircle(cx, cy, drawRadius, ocrBackgroundPaint);
+        ocrBackgroundPaint.setShader(null);
+        canvas.drawCircle(cx, cy, drawRadius, itemStrokePaint);
+        if (ocrHighlighted) {
+            canvas.drawCircle(cx, cy, drawRadius + dp(3), highlightPaint);
+        }
+        drawOcrGlyph(canvas, cx, cy, drawRadius);
+    }
+
+    /** View-finder frame with a lens in the middle: screen recognition. */
+    private void drawOcrGlyph(Canvas canvas, float cx, float cy, float radius) {
+        float half = radius * 0.52f;
+        float arm = radius * 0.30f;
+        float left = cx - half;
+        float right = cx + half;
+        float top = cy - half;
+        float bottom = cy + half;
+
+        canvas.drawLine(left, top + arm, left, top, ocrGlyphPaint);
+        canvas.drawLine(left, top, left + arm, top, ocrGlyphPaint);
+        canvas.drawLine(right - arm, top, right, top, ocrGlyphPaint);
+        canvas.drawLine(right, top, right, top + arm, ocrGlyphPaint);
+        canvas.drawLine(left, bottom - arm, left, bottom, ocrGlyphPaint);
+        canvas.drawLine(left, bottom, left + arm, bottom, ocrGlyphPaint);
+        canvas.drawLine(right - arm, bottom, right, bottom, ocrGlyphPaint);
+        canvas.drawLine(right, bottom, right, bottom - arm, ocrGlyphPaint);
+        canvas.drawCircle(cx, cy, radius * 0.25f, ocrGlyphPaint);
+    }
+
     private void drawCaption(Canvas canvas, float alpha) {
         FloatingBallItem highlightedItem = highlighted >= 0 && highlighted < items.size()
                 ? items.get(highlighted) : null;
-        String text = highlightedItem != null && !TextUtils.isEmpty(highlightedItem.label())
-                ? highlightedItem.label() : layerLabel;
+        String text = ocrHighlighted ? "识屏"
+                : highlightedItem != null && !TextUtils.isEmpty(highlightedItem.label())
+                        ? highlightedItem.label() : layerLabel;
         if (TextUtils.isEmpty(text)) {
             return;
         }

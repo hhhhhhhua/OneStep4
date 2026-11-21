@@ -96,6 +96,12 @@ public class FloatingBallLayoutPolicyTest {
     }
 
     @Test
+    public void screenOcrControlSitsRightOfTheSwitchOnTheSameLine() {
+        assertEquals(143f, FloatingBallLayoutPolicy.ocrCenterX(100f, 20f), DELTA);
+        assertEquals(100f, FloatingBallLayoutPolicy.ocrCenterX(100f, 0f), DELTA);
+    }
+
+    @Test
     public void detectsWhenTheFingerIsBackOnTheBall() {
         assertTrue(FloatingBallLayoutPolicy.isOverBall(0f, 0f, 28f, 10f, 10f));
         assertFalse(FloatingBallLayoutPolicy.isOverBall(0f, 0f, 28f, 40f, 40f));

@@ -90,6 +90,9 @@ public final class FloatingBallController {
 
         void onOpenPicker();
 
+        /** Runs the system smart-sidebar 识屏 (screen recognition). */
+        void onScreenOcr();
+
         void onExpandedChanged(boolean expanded);
 
         float[] savedPosition();
@@ -140,6 +143,10 @@ public final class FloatingBallController {
     private List<FloatingBallItem> ringItems = Collections.emptyList();
     private float[] ringCenters = new float[0];
     private int highlightIndex = -1;
+    /** Screen-positioned 识屏 control, drawn on the switch's horizontal line. */
+    private boolean ocrHighlighted;
+    private float ocrCenterX;
+    private float ocrCenterY;
 
     private float positionYRatio = DEFAULT_Y_RATIO;
     private boolean dockedRight = true;
@@ -440,9 +447,11 @@ public final class FloatingBallController {
         cancelLockTimeout();
         state = State.IDLE;
         highlightIndex = -1;
+        ocrHighlighted = false;
         if (overlay != null) {
             setOverlayInteractive(false);
             overlay.setHighlight(-1);
+            overlay.setOcrHighlighted(false);
             overlay.playCollapse();
         }
         if (ball != null) {
@@ -564,7 +573,10 @@ public final class FloatingBallController {
                     break;
                 }
                 updateHighlightAt(rawX, rawY);
-                if (highlightIndex >= 0) {
+                if (ocrHighlighted) {
+                    collapse();
+                    callbacks.onScreenOcr();
+                } else if (highlightIndex >= 0) {
                     execute(highlightIndex);
                 } else {
                     collapse();
@@ -656,6 +668,9 @@ public final class FloatingBallController {
         float[] geometry = computeGeometry();
         ringCenters = FloatingBallLayoutPolicy.computeCenters(
                 geometry[0], geometry[1], geometry[2], items.size());
+        ocrCenterX = FloatingBallLayoutPolicy.ocrCenterX(ringCenters[0], itemRadiusPx);
+        ocrCenterY = ringCenters[1];
+        ocrHighlighted = false;
         overlay.setRing(items, layerLabel(), geometry[0], geometry[1], geometry[2],
                 itemRadiusPx);
         overlay.setHighlight(-1);
@@ -725,8 +740,22 @@ public final class FloatingBallController {
         }
         int[] location = new int[2];
         overlay.getLocationOnScreen(location);
+        float touchX = rawX - location[0];
+        float touchY = rawY - location[1];
         int index = FloatingBallLayoutPolicy.hitTest(ringCenters,
-                rawX - location[0], rawY - location[1], itemRadiusPx, hitSlopPx);
+                touchX, touchY, itemRadiusPx, hitSlopPx);
+        boolean onOcr = isOcrHit(touchX, touchY);
+        if (onOcr && index >= 0) {
+            // The two controls sit close together near 12 o'clock; nearest one wins.
+            float ocrDistance = distanceSquared(touchX, touchY, ocrCenterX, ocrCenterY);
+            float ringDistance = distanceSquared(touchX, touchY,
+                    ringCenters[index * 2], ringCenters[index * 2 + 1]);
+            onOcr = ocrDistance < ringDistance;
+        }
+        if (onOcr) {
+            index = -1;
+        }
+        setOcrHighlighted(onOcr);
         setHighlight(index);
     }
 
@@ -745,6 +774,34 @@ public final class FloatingBallController {
         if (index >= 0 && ball != null) {
             ball.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
         }
+    }
+
+    private boolean isOcrHit(float touchX, float touchY) {
+        float threshold = itemRadiusPx + hitSlopPx;
+        return distanceSquared(touchX, touchY, ocrCenterX, ocrCenterY)
+                <= threshold * threshold;
+    }
+
+    private void setOcrHighlighted(boolean highlighted) {
+        if (ocrHighlighted == highlighted) {
+            return;
+        }
+        ocrHighlighted = highlighted;
+        if (overlay != null) {
+            overlay.setOcrHighlighted(highlighted);
+        }
+        if (highlighted) {
+            cancelDwell();
+            if (ball != null) {
+                ball.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            }
+        }
+    }
+
+    private static float distanceSquared(float ax, float ay, float bx, float by) {
+        float dx = ax - bx;
+        float dy = ay - by;
+        return dx * dx + dy * dy;
     }
 
     private void scheduleDwell() {
@@ -832,7 +889,10 @@ public final class FloatingBallController {
                 lastRawX = rawX;
                 lastRawY = rawY;
                 updateHighlightAt(rawX, rawY);
-                if (highlightIndex >= 0) {
+                if (ocrHighlighted) {
+                    collapse();
+                    callbacks.onScreenOcr();
+                } else if (highlightIndex >= 0) {
                     execute(highlightIndex);
                 } else {
                     collapse();

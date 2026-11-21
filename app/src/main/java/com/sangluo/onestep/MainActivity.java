@@ -10009,6 +10009,11 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onScreenOcr() {
+                triggerScreenOcr();
+            }
+
+            @Override
             public void onExpandedChanged(boolean expanded) {
                 // The expanded ring must sit above the side-slot input shields, otherwise
                 // taps on the ring would be swallowed by the shield windows.
@@ -10032,6 +10037,27 @@ public class MainActivity extends Activity {
                 mainHandler.post(MainActivity.this::raiseFloatingBallAboveShields);
             }
         });
+    }
+
+    /** Fires the ColorOS smart-sidebar 识屏 service through the Shizuku user service. */
+    private void triggerScreenOcr() {
+        new Thread(() -> {
+            IShizukuCommonService service = ShizukuServiceUtil.getShizukuCommonService();
+            if (service == null) {
+                Log.w(TAG, "识屏：Shizuku 服务未连接");
+                return;
+            }
+            try {
+                ShellCommandResult result = service.run(
+                        "am start-foreground-service -a oplus.intent.action.DIRECT_SIDEBAR_SERVICE"
+                                + " -e extra_entrance_function full_screen_ocr"
+                                + " -e triggered_app com.coloros.smartsidebar",
+                        10);
+                Log.d(TAG, "识屏 exit=" + result.exitCode + " out=" + result.output);
+            } catch (RemoteException e) {
+                Log.e(TAG, "识屏命令执行失败", e);
+            }
+        }, "onestep-screen-ocr").start();
     }
 
     private LauncherApp currentMainApp() {

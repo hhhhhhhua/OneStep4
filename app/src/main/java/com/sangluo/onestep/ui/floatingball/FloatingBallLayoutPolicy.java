@@ -16,6 +16,8 @@ public final class FloatingBallLayoutPolicy {
     public static final float HIT_SLOP_DP = 24f;
     /** Reserved ring index of the layer switch control. */
     public static final int SWITCH_INDEX = 0;
+    /** Distance of the 识屏 control from the switch centre, in item radii. */
+    public static final float OCR_OFFSET_ITEM_RADII = 2.15f;
 
     private FloatingBallLayoutPolicy() {
     }
@@ -66,6 +68,14 @@ public final class FloatingBallLayoutPolicy {
         }
         int wrapped = ((index % slotCount) + slotCount) % slotCount;
         return -90f + (360f / slotCount) * wrapped;
+    }
+
+    /**
+     * Horizontal centre of the 识屏 control: on the switch's horizontal line, to its
+     * right, outside the ring slots so it never costs an app position.
+     */
+    public static float ocrCenterX(float switchCenterX, float itemRadiusPx) {
+        return switchCenterX + itemRadiusPx * OCR_OFFSET_ITEM_RADII;
     }
 
     /**
