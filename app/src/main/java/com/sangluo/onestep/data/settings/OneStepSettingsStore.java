@@ -62,6 +62,10 @@ public final class OneStepSettingsStore {
     private static final String PREF_FLOATING_BALL_OPACITY = "floating_ball_opacity";
     private static final String PREF_FLOATING_BALL_APPS = "floating_ball_apps";
     private static final String PREF_FLOATING_BALL_POSITION = "floating_ball_position";
+    private static final String PREF_AUDIO_OUTPUT_PIN_TYPE = "audio_output_pin_type";
+    private static final String PREF_AUDIO_OUTPUT_PIN_TYPE_NAME = "audio_output_pin_type_name";
+    private static final String PREF_AUDIO_OUTPUT_PIN_ADDRESS = "audio_output_pin_address";
+    private static final String PREF_AUDIO_OUTPUT_PIN_NAME = "audio_output_pin_name";
 
     private final SharedPreferences preferences;
     private final SharedPreferences directBootPreferences;
@@ -336,6 +340,40 @@ public final class OneStepSettingsStore {
         preferences.edit()
                 .putString(PREF_FLOATING_BALL_POSITION,
                         clampRatio(xRatio) + "," + clampRatio(yRatio))
+                .apply();
+    }
+
+    public int loadPinnedAudioOutputType() {
+        return preferences.getInt(PREF_AUDIO_OUTPUT_PIN_TYPE, -1);
+    }
+
+    public String loadPinnedAudioOutputTypeName() {
+        return preferences.getString(PREF_AUDIO_OUTPUT_PIN_TYPE_NAME, "");
+    }
+
+    public String loadPinnedAudioOutputAddress() {
+        return preferences.getString(PREF_AUDIO_OUTPUT_PIN_ADDRESS, "");
+    }
+
+    public String loadPinnedAudioOutputName() {
+        return preferences.getString(PREF_AUDIO_OUTPUT_PIN_NAME, "");
+    }
+
+    public void savePinnedAudioOutput(int type, String typeName, String address, String name) {
+        preferences.edit()
+                .putInt(PREF_AUDIO_OUTPUT_PIN_TYPE, type)
+                .putString(PREF_AUDIO_OUTPUT_PIN_TYPE_NAME, typeName == null ? "" : typeName)
+                .putString(PREF_AUDIO_OUTPUT_PIN_ADDRESS, address == null ? "" : address)
+                .putString(PREF_AUDIO_OUTPUT_PIN_NAME, name == null ? "" : name)
+                .apply();
+    }
+
+    public void clearPinnedAudioOutput() {
+        preferences.edit()
+                .remove(PREF_AUDIO_OUTPUT_PIN_TYPE)
+                .remove(PREF_AUDIO_OUTPUT_PIN_TYPE_NAME)
+                .remove(PREF_AUDIO_OUTPUT_PIN_ADDRESS)
+                .remove(PREF_AUDIO_OUTPUT_PIN_NAME)
                 .apply();
     }
 

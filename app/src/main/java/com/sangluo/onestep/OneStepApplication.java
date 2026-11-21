@@ -8,6 +8,7 @@ import android.os.UserManager;
 import android.util.Log;
 
 import com.sangluo.onestep.data.apps.LauncherAppRepository;
+import com.sangluo.onestep.feature.audio.AudioOutputController;
 import com.sangluo.onestep.system.root.PersistentRootShell;
 import com.sangluo.onestep.utils.ShizukuServiceUtil;
 
@@ -62,6 +63,13 @@ public final class OneStepApplication extends Application {
         }
 
         this.sInstance = this;
+
+        // Re-apply the pinned sound output as soon as OneStep's process starts. Skip
+        // Shizuku's user-service processes, which share this class but not the binder.
+        if ((userManager == null || userManager.isUserUnlocked())
+                && getPackageName().equals(getProcessName())) {
+            AudioOutputController.get(this).start();
+        }
 
         Thread.setDefaultUncaughtExceptionHandler(
                 (thread, throwable) -> {

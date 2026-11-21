@@ -88,6 +88,7 @@ import com.sangluo.onestep.data.settings.OneStepSettingsStore;
 import com.sangluo.onestep.data.settings.TopAppListPolicy;
 import com.sangluo.onestep.data.apps.LauncherAppRepository;
 import com.sangluo.onestep.feature.embedding.EmbeddedAppHost;
+import com.sangluo.onestep.feature.audio.AudioOutputController;
 import com.sangluo.onestep.feature.embedding.DismissedAppClosePolicy;
 import com.sangluo.onestep.feature.embedding.DefaultHomeRoutingPolicy;
 import com.sangluo.onestep.feature.embedding.EmbeddedStartEpochStore;
@@ -114,6 +115,7 @@ import com.sangluo.onestep.system.root.PersistentRootShell;
 import com.sangluo.onestep.system.root.ShellCommandResult;
 import com.sangluo.onestep.system.root.ZygiskHookConfig;
 import com.sangluo.onestep.system.ui.SystemUiController;
+import com.sangluo.onestep.ui.audio.AudioOutputDialog;
 import com.sangluo.onestep.ui.background.BlurredBackgroundView;
 import com.sangluo.onestep.ui.floatingball.FloatingBallController;
 import com.sangluo.onestep.ui.floatingball.FloatingBallItem;
@@ -717,6 +719,7 @@ public class MainActivity extends Activity {
     private LinearLayout topNavRightControls;
     private TextClock topNavClockView;
     private ImageView topNavSettingsControl;
+    private ImageView topNavAudioOutputControl;
     private ImageView topNavExpandLeftControl;
     private ImageView topNavExpandRightControl;
     private ImageView mainPaneSwapControl;
@@ -1049,6 +1052,16 @@ public class MainActivity extends Activity {
             rebindNotificationListenerIfEnabled();
             floatingBallController.refreshNotificationPanel();
         }
+        AudioOutputController audioOutput = AudioOutputController.get(this);
+        audioOutput.start();
+        audioOutput.refreshPinned();
+    }
+
+    private void showAudioOutputPicker() {
+        if (activityDestroyed || exitOneStepPending) {
+            return;
+        }
+        AudioOutputDialog.show(this, AudioOutputController.get(this));
     }
 
     /** Applies the new KernelSU authorization without destroying the existing HOME task. */
@@ -3786,6 +3799,9 @@ public class MainActivity extends Activity {
         topNavSettingsControl = createTopNavImageControl(
                 R.drawable.top_nav_settings, "设置");
         topNavSettingsControl.setOnClickListener(v -> showInternalSettingsPage());
+        topNavAudioOutputControl = createTopNavImageControl(
+                R.drawable.top_nav_audio_output, "声音输出");
+        topNavAudioOutputControl.setOnClickListener(v -> showAudioOutputPicker());
         topNavExpandLeftControl = createTopNavImageControl(
                 R.drawable.top_nav_expand_left, "展开");
         topNavExpandLeftControl.setOnClickListener(v -> exitOneStepMode());
@@ -3856,6 +3872,7 @@ public class MainActivity extends Activity {
     private void updateTopNavigationControls() {
         if (topNavLeftControls == null || topNavRightControls == null
                 || topNavClockView == null || topNavSettingsControl == null
+                || topNavAudioOutputControl == null
                 || topNavExpandLeftControl == null
                 || topNavExpandRightControl == null) {
             return;
@@ -3866,11 +3883,13 @@ public class MainActivity extends Activity {
         if (verticalWindowLayout || mainOnLeft) {
             addTopNavControl(topNavLeftControls, topNavExpandLeftControl);
             addTopNavControl(topNavLeftControls, topNavSettingsControl);
+            addTopNavControl(topNavLeftControls, topNavAudioOutputControl);
             addTopNavClock(topNavRightControls, topNavClockView);
             return;
         }
         addTopNavControl(topNavLeftControls, topNavExpandLeftControl);
         addTopNavControl(topNavLeftControls, topNavSettingsControl);
+        addTopNavControl(topNavLeftControls, topNavAudioOutputControl);
         addTopNavClock(topNavRightControls, topNavClockView);
     }
 
