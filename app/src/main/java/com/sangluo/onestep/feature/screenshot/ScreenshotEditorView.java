@@ -284,23 +284,29 @@ public final class ScreenshotEditorView extends View {
         float gap = dp(CHIP_GAP_DP);
         float total = chipWidth * 3f + gap * 2f;
         float left = (width - total) / 2f;
+        float edge = dp(8);
         boolean toolbarBelowSelection = selection == null
                 || toolbarBounds[1] >= selection[3];
-        float top = toolbarBelowSelection
-                ? toolbarBounds[3] + dp(8)
-                : toolbarBounds[1] - dp(8) - chipHeight;
-        if (!toolbarBelowSelection && modeBarRect.bottom <= toolbarBounds[1]) {
-            // Mode chips already sit above the flipped toolbar; keep width chips above
-            // both rows.
-            top = modeBarRect.top - dp(8) - chipHeight;
+        float top;
+        if (toolbarBelowSelection) {
+            // Keep the chips on the far side of the toolbar, away from the selection.
+            top = toolbarBounds[3] + edge;
+            if (top + chipHeight > height - edge) {
+                top = toolbarBounds[1] - edge - chipHeight;
+            }
+        } else {
+            // The toolbar sits above the selection or is pinned to the bottom edge
+            // (full-screen / 主slot selections); keep the chips above it. When the mode
+            // bar is stacked above the toolbar as well, put the chips above both rows.
+            top = toolbarBounds[1] - edge - chipHeight;
+            if (top < modeBarRect.bottom && top + chipHeight > modeBarRect.top) {
+                top = modeBarRect.top - edge - chipHeight;
+            }
+            if (top < edge) {
+                top = toolbarBounds[3] + edge;
+            }
         }
-        if (top + chipHeight > height - dp(8)) {
-            top = toolbarBounds[1] - dp(8) - chipHeight;
-        }
-        if (top < dp(8)) {
-            top = Math.min(height - chipHeight - dp(8), toolbarBounds[3] + dp(8));
-        }
-        top = Math.max(dp(8), top);
+        top = Math.max(edge, Math.min(top, Math.max(edge, height - edge - chipHeight)));
         for (int index = 0; index < 3; index++) {
             float chipLeft = left + (chipWidth + gap) * index;
             chipBounds[index][0] = chipLeft;
