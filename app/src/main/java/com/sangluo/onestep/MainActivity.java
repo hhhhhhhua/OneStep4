@@ -910,6 +910,7 @@ public class MainActivity extends Activity {
                 hdmiDensity = new OneStepSettingsStore(getApplicationContext()).loadHdmiDensity();
                 persistentRootShell.run("wm density " + hdmiDensity + " -d " + hdmiDisplayId);
             }
+            ensureFloatingBallOverlayAppOp();
 
             MainActivity.this.mainHandler.post(() -> {
                 requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -9931,6 +9932,27 @@ public class MainActivity extends Activity {
     }
 
     // -------------------------------------------------------------- floating ball
+
+    /**
+     * The floating ball stays above apps that cover OneStep's display, which needs the
+     * SYSTEM_ALERT_WINDOW app-op. Privileged installs get it automatically; for any other
+     * install fall back to the root shell so the overlay window is actually permitted.
+     */
+    private void ensureFloatingBallOverlayAppOp() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+                || Settings.canDrawOverlays(this)
+                || ShizukuServiceUtil.getShizukuCommonService() == null) {
+            return;
+        }
+        try {
+            ShellCommandResult result = persistentRootShell.run(
+                    "appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow");
+            Log.i(TAG, "Grant floating ball overlay app-op: exit=" + result.exitCode
+                    + (TextUtils.isEmpty(result.output) ? "" : ", output=" + result.output));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to grant floating ball overlay app-op", e);
+        }
+    }
 
     private FloatingBallController createFloatingBallController() {
         return new FloatingBallController(this, new FloatingBallController.Callbacks() {

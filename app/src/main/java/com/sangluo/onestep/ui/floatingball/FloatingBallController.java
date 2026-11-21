@@ -6,8 +6,10 @@ import android.content.Context;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
@@ -32,11 +34,13 @@ import java.util.Set;
  * Owns the floating ball's lifecycle, gesture state machine, ring geometry and
  * action dispatch.
  *
- * <p>Both the ball and the ring live in their own {@code TYPE_APPLICATION_PANEL}
- * windows: OneStep hosts apps inside {@code SurfaceView}s, and a view added to the
- * activity's hierarchy is covered by those surfaces once an app takes the pane
- * fullscreen. Panel windows ride on top of the activity window instead, exactly like
- * the main-pane swap control.</p>
+ * <p>Both the ball and the ring live in their own windows: OneStep hosts apps inside
+ * {@code SurfaceView}s, and a view added to the activity's hierarchy is covered by those
+ * surfaces once an app takes the pane fullscreen. When the "display over other apps"
+ * app-op is granted the windows are {@code TYPE_APPLICATION_OVERLAY}, so the ball also
+ * stays above apps that open on top of OneStep's display (for example an app started on
+ * the virtual screen); otherwise they fall back to attached panels above the activity
+ * window, exactly like the main-pane swap control.</p>
  */
 public final class FloatingBallController {
     private static final String TAG = "OneStep40_FloatingBall";
@@ -61,6 +65,13 @@ public final class FloatingBallController {
             WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG;
     private static final int FALLBACK_SUB_WINDOW_TYPE =
             WindowManager.LayoutParams.TYPE_APPLICATION_PANEL;
+    /**
+     * System alert windows sort above every application window, including apps that open
+     * on top of OneStep's own display. Only usable when the "display over other apps"
+     * app-op is granted and requires a token-less window.
+     */
+    private static final int OVERLAY_WINDOW_TYPE =
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
 
     public interface Callbacks {
         boolean isEnabled();
@@ -125,6 +136,8 @@ public final class FloatingBallController {
     private WindowManager.LayoutParams overlayParams;
     private boolean ballWindowAttached;
     private boolean overlayWindowAttached;
+    /** True while the ball window is a system overlay rather than a panel sub-window. */
+    private boolean ballUsesSystemOverlay;
     private boolean attached;
     private boolean suppressed;
 
@@ -223,26 +236,54 @@ public final class FloatingBallController {
             return;
         }
         if (ball != null && !ballWindowAttached) {
-            ballParams.token = token;
+            boolean allowOverlay = preferSystemOverlay();
+            ballUsesSystemOverlay = allowOverlay;
+            ballParams.token = allowOverlay ? null : token;
             applyBallPosition();
-            if (!addSubWindow(ball, ballParams, "ball")) {
+            if (!addSubWindow(ball, ballParams, "ball", token, allowOverlay)) {
                 decor.removeCallbacks(attachRetryRunnable);
                 decor.postDelayed(attachRetryRunnable, ATTACH_RETRY_MS);
                 return;
             }
             ballWindowAttached = true;
+            ballUsesSystemOverlay = ballParams.type == OVERLAY_WINDOW_TYPE;
+            if (ballUsesSystemOverlay != allowOverlay) {
+                // The overlay was rejected and the panel fallback has a different
+                // coordinate origin, so redo the position with the resolved mode.
+                applyBallPosition();
+            }
         }
         if (overlay != null && !overlayWindowAttached) {
-            overlayParams.token = token;
-            if (addSubWindow(overlay, overlayParams, "ring")) {
+            // Keep the ring in the same window family as the ball: a panel ring below a
+            // covering app would be invisible even while the overlay ball stays usable.
+            boolean allowOverlay = ballUsesSystemOverlay;
+            overlayParams.token = allowOverlay ? null : token;
+            if (addSubWindow(overlay, overlayParams, "ring", token, allowOverlay)) {
                 overlayWindowAttached = true;
             }
         }
     }
 
-    /** Adds a sub-window above the panel shields, falling back to a plain panel window. */
-    private boolean addSubWindow(View view, WindowManager.LayoutParams params, String name) {
+    /**
+     * Adds a floating-ball window. Prefers a system alert overlay so the ball stays above
+     * any app covering OneStep's display, then falls back to sub-windows of the activity
+     * (above the panel shields, then a plain panel).
+     */
+    private boolean addSubWindow(View view, WindowManager.LayoutParams params, String name,
+                                 IBinder token, boolean allowOverlay) {
+        if (allowOverlay) {
+            params.type = OVERLAY_WINDOW_TYPE;
+            params.token = null;
+            try {
+                activity.getWindowManager().addView(view, params);
+                return true;
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Unable to attach floating ball " + name + " as system overlay: "
+                        + e.getClass().getSimpleName());
+            }
+        }
         params.type = SUB_WINDOW_TYPE;
+        params.token = token;
         try {
             activity.getWindowManager().addView(view, params);
             return true;
@@ -259,6 +300,12 @@ public final class FloatingBallController {
                     + e.getClass().getSimpleName());
             return false;
         }
+    }
+
+    /** System alert windows need the user-visible "display over other apps" app-op. */
+    private boolean preferSystemOverlay() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && Settings.canDrawOverlays(activity);
     }
 
     private WindowManager.LayoutParams createBallParams() {
@@ -359,7 +406,7 @@ public final class FloatingBallController {
      * Only done while idle, since removing the window would cancel an active gesture.</p>
      */
     public void raise() {
-        if (!attached || ball == null || !ballWindowAttached
+        if (!attached || ball == null || !ballWindowAttached || ballUsesSystemOverlay
                 || state != State.IDLE || suppressed || !callbacks.isEnabled()) {
             return;
         }
@@ -706,6 +753,19 @@ public final class FloatingBallController {
         activity.getWindow().getDecorView().getLocationOnScreen(out);
     }
 
+    /**
+     * Origin of the ball window's coordinate space: a system overlay is positioned
+     * against the whole display, while a panel is positioned inside its parent window.
+     */
+    private void windowOriginOnScreen(int[] out) {
+        if (ballUsesSystemOverlay) {
+            out[0] = 0;
+            out[1] = 0;
+            return;
+        }
+        parentLocationOnScreen(out);
+    }
+
     /** Ring centre and radius in screen coordinates: {@code [centerX, centerY, radius]}. */
     private float[] computeGeometry() {
         int[] location = new int[2];
@@ -995,7 +1055,7 @@ public final class FloatingBallController {
             return;
         }
         int[] parent = new int[2];
-        parentLocationOnScreen(parent);
+        windowOriginOnScreen(parent);
         int targetX = left - parent[0];
         int targetY = top - parent[1];
         if (!animate || !ballWindowAttached) {
@@ -1090,7 +1150,7 @@ public final class FloatingBallController {
         DisplayMetrics metrics = screenMetrics();
         int half = ballSizePx / 2;
         int[] parent = new int[2];
-        parentLocationOnScreen(parent);
+        windowOriginOnScreen(parent);
         int left = Math.round(rawX) - half;
         int top = Math.round(rawY) - half;
         left = clampInt(left, 0, Math.max(0, metrics.widthPixels - ballSizePx));
@@ -1111,7 +1171,7 @@ public final class FloatingBallController {
             return;
         }
         int[] parent = new int[2];
-        parentLocationOnScreen(parent);
+        windowOriginOnScreen(parent);
         float centerX = ballParams.x + parent[0] + ballSizePx / 2f;
         float centerY = ballParams.y + parent[1] + ballSizePx / 2f;
         dockedRight = centerX >= metrics.widthPixels / 2f;
