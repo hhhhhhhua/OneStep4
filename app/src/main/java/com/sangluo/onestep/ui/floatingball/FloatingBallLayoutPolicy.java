@@ -18,6 +18,8 @@ public final class FloatingBallLayoutPolicy {
     public static final int SWITCH_INDEX = 0;
     /** Distance of the 识屏 control from the switch centre, in item radii. */
     public static final float OCR_OFFSET_ITEM_RADII = 2.15f;
+    /** Distance of the 杀死应用 control from the switch centre, in item radii. */
+    public static final float KILL_OFFSET_ITEM_RADII = 2.15f;
 
     private FloatingBallLayoutPolicy() {
     }
@@ -76,6 +78,14 @@ public final class FloatingBallLayoutPolicy {
      */
     public static float ocrCenterX(float switchCenterX, float itemRadiusPx) {
         return switchCenterX + itemRadiusPx * OCR_OFFSET_ITEM_RADII;
+    }
+
+    /**
+     * Horizontal centre of the 杀死应用 control: on the switch's horizontal line, to its
+     * left, mirroring the 识屏 control so neither costs an app position.
+     */
+    public static float killCenterX(float switchCenterX, float itemRadiusPx) {
+        return switchCenterX - itemRadiusPx * KILL_OFFSET_ITEM_RADII;
     }
 
     /**

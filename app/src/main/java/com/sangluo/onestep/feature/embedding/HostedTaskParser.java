@@ -166,6 +166,36 @@ public final class HostedTaskParser {
         return "";
     }
 
+    /**
+     * Component of the topmost visible activity on {@code targetDisplayId}, regardless of
+     * package, or {@code ""} when the display has no visible task. The stack listing prints
+     * a display's tasks from top to bottom, so the first visible entry is the top app.
+     */
+    public static String findTopVisibleActivity(String stackList, int targetDisplayId) {
+        if (stackList == null) {
+            return "";
+        }
+        int rootDisplayId = -1;
+        String[] lines = stackList.split("\\n");
+        for (String rawLine : lines) {
+            String line = rawLine.trim();
+            if (isDisplayContainerLine(line)) {
+                rootDisplayId = parseIntAfter(line, "displayId=");
+                continue;
+            }
+            if (rootDisplayId != targetDisplayId || !line.startsWith("taskId=")
+                    || !line.contains("visible=true")
+                    || !hasDisplayableTopActivity(line)) {
+                continue;
+            }
+            String component = parseTopActivity(line);
+            if (!component.isEmpty()) {
+                return component;
+            }
+        }
+        return "";
+    }
+
     private static String parseTopActivity(String taskLine) {
         int marker = taskLine.indexOf("topActivity=");
         if (marker < 0) {

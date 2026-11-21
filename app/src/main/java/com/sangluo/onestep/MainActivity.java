@@ -91,6 +91,7 @@ import com.sangluo.onestep.feature.embedding.DefaultHomeRoutingPolicy;
 import com.sangluo.onestep.feature.embedding.EmbeddedStartEpochStore;
 import com.sangluo.onestep.feature.embedding.HiddenActivityViewHost;
 import com.sangluo.onestep.feature.embedding.HostedDisplayRotationController;
+import com.sangluo.onestep.feature.embedding.HostedTaskParser;
 import com.sangluo.onestep.feature.drag.ImageDragSessionController;
 import com.sangluo.onestep.feature.drag.ImageDragBridgeRegistry;
 import com.sangluo.onestep.feature.drag.ImageDragFeatureGate;
@@ -229,6 +230,8 @@ public class MainActivity extends Activity {
     private static final int MAIN_PANE_SWAP_ICON_HORIZONTAL_PADDING_DP = 10;
     private static final int MAIN_PANE_SWAP_ICON_VERTICAL_PADDING_DP = 12;
     private static final int MEDIA_ROOT_COMMAND_TIMEOUT_SECONDS = 8;
+    private static final String TASK_STACK_LIST_COMMAND =
+            "cmd activity stack list 2>/dev/null || am stack list";
     private static final String[] KERNEL_SU_MANAGER_PACKAGES = {
             "me.weishu.kernelsu",
             "com.rifsxd.ksunext"
@@ -10036,6 +10039,11 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onKillApp() {
+                killFloatingBallTarget();
+            }
+
+            @Override
             public void onExpandedChanged(boolean expanded) {
                 // The expanded ring must sit above the side-slot input shields, otherwise
                 // taps on the ring would be swallowed by the shield windows.
@@ -10080,6 +10088,56 @@ public class MainActivity extends Activity {
                 Log.e(TAG, "识屏命令执行失败", e);
             }
         }, "onestep-screen-ocr").start();
+    }
+
+    /**
+     * Floating-ball 杀死应用: when an app opened on top of OneStep's own display owns the
+     * foreground task, force-stop it; otherwise fall back to the edge-back kill, which
+     * dismisses the app in the active main slot.
+     */
+    private void killFloatingBallTarget() {
+        final int displayId = getActivityDisplayId();
+        final String ownPackage = getPackageName();
+        try {
+            mediaRootExecutor.execute(() -> {
+                ShellCommandResult stackList = runMainPrivilegedCommand(
+                        TASK_STACK_LIST_COMMAND,
+                        "check top app before floating-ball kill", false);
+                if (!stackList.isSuccess() || TextUtils.isEmpty(stackList.output)) {
+                    Log.w(TAG, "杀死应用：无法读取 display " + displayId + " 的顶层任务");
+                    return;
+                }
+                String topActivity = HostedTaskParser.findTopVisibleActivity(
+                        stackList.output, displayId);
+                String packageName = componentPackageName(topActivity);
+                Log.i(TAG, "杀死应用：display=" + displayId + " top=" + topActivity);
+                if (!TextUtils.isEmpty(packageName)
+                        && !TextUtils.equals(packageName, ownPackage)) {
+                    ShellCommandResult result = runMainPrivilegedCommand(
+                            "am force-stop " + mainShellQuote(packageName),
+                            "force-stop top app on display " + displayId, true);
+                    if (!result.isSuccess()) {
+                        Log.e(TAG, "杀死应用失败: " + packageName + " exit=" + result.exitCode);
+                    }
+                    return;
+                }
+                mainHandler.post(() -> {
+                    if (!activityDestroyed) {
+                        dispatchKillEdgeBackToMainPane();
+                    }
+                });
+            });
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Queue floating-ball kill failed", e);
+        }
+    }
+
+    private static String componentPackageName(String component) {
+        if (TextUtils.isEmpty(component)) {
+            return "";
+        }
+        int slash = component.indexOf('/');
+        return slash > 0 ? component.substring(0, slash) : "";
     }
 
     private LauncherApp currentMainApp() {

@@ -104,6 +104,9 @@ public final class FloatingBallController {
         /** Runs the system smart-sidebar 识屏 (screen recognition). */
         void onScreenOcr();
 
+        /** Kills the app covering OneStep's display, or the active main-slot app. */
+        void onKillApp();
+
         void onExpandedChanged(boolean expanded);
 
         float[] savedPosition();
@@ -160,6 +163,9 @@ public final class FloatingBallController {
     private boolean ocrHighlighted;
     private float ocrCenterX;
     private float ocrCenterY;
+    private boolean killHighlighted;
+    private float killCenterX;
+    private float killCenterY;
 
     private float positionYRatio = DEFAULT_Y_RATIO;
     private boolean dockedRight = true;
@@ -495,10 +501,12 @@ public final class FloatingBallController {
         state = State.IDLE;
         highlightIndex = -1;
         ocrHighlighted = false;
+        killHighlighted = false;
         if (overlay != null) {
             setOverlayInteractive(false);
             overlay.setHighlight(-1);
             overlay.setOcrHighlighted(false);
+            overlay.setKillHighlighted(false);
             overlay.playCollapse();
         }
         if (ball != null) {
@@ -620,7 +628,10 @@ public final class FloatingBallController {
                     break;
                 }
                 updateHighlightAt(rawX, rawY);
-                if (ocrHighlighted) {
+                if (killHighlighted) {
+                    collapse();
+                    callbacks.onKillApp();
+                } else if (ocrHighlighted) {
                     collapse();
                     callbacks.onScreenOcr();
                 } else if (highlightIndex >= 0) {
@@ -718,6 +729,9 @@ public final class FloatingBallController {
         ocrCenterX = FloatingBallLayoutPolicy.ocrCenterX(ringCenters[0], itemRadiusPx);
         ocrCenterY = ringCenters[1];
         ocrHighlighted = false;
+        killCenterX = FloatingBallLayoutPolicy.killCenterX(ringCenters[0], itemRadiusPx);
+        killCenterY = ringCenters[1];
+        killHighlighted = false;
         overlay.setRing(items, layerLabel(), geometry[0], geometry[1], geometry[2],
                 itemRadiusPx);
         overlay.setHighlight(-1);
@@ -805,17 +819,27 @@ public final class FloatingBallController {
         int index = FloatingBallLayoutPolicy.hitTest(ringCenters,
                 touchX, touchY, itemRadiusPx, hitSlopPx);
         boolean onOcr = isOcrHit(touchX, touchY);
-        if (onOcr && index >= 0) {
-            // The two controls sit close together near 12 o'clock; nearest one wins.
-            float ocrDistance = distanceSquared(touchX, touchY, ocrCenterX, ocrCenterY);
+        boolean onKill = isKillHit(touchX, touchY);
+        if ((onOcr || onKill) && index >= 0) {
+            // All three controls sit close together near 12 o'clock; nearest wins.
             float ringDistance = distanceSquared(touchX, touchY,
                     ringCenters[index * 2], ringCenters[index * 2 + 1]);
-            onOcr = ocrDistance < ringDistance;
+            onOcr = onOcr && distanceSquared(touchX, touchY,
+                    ocrCenterX, ocrCenterY) < ringDistance;
+            onKill = onKill && distanceSquared(touchX, touchY,
+                    killCenterX, killCenterY) < ringDistance;
         }
-        if (onOcr) {
+        if (onOcr && onKill) {
+            boolean ocrCloser = distanceSquared(touchX, touchY, ocrCenterX, ocrCenterY)
+                    < distanceSquared(touchX, touchY, killCenterX, killCenterY);
+            onOcr = ocrCloser;
+            onKill = !ocrCloser;
+        }
+        if (onOcr || onKill) {
             index = -1;
         }
         setOcrHighlighted(onOcr);
+        setKillHighlighted(onKill);
         setHighlight(index);
     }
 
@@ -842,6 +866,12 @@ public final class FloatingBallController {
                 <= threshold * threshold;
     }
 
+    private boolean isKillHit(float touchX, float touchY) {
+        float threshold = itemRadiusPx + hitSlopPx;
+        return distanceSquared(touchX, touchY, killCenterX, killCenterY)
+                <= threshold * threshold;
+    }
+
     private void setOcrHighlighted(boolean highlighted) {
         if (ocrHighlighted == highlighted) {
             return;
@@ -849,6 +879,22 @@ public final class FloatingBallController {
         ocrHighlighted = highlighted;
         if (overlay != null) {
             overlay.setOcrHighlighted(highlighted);
+        }
+        if (highlighted) {
+            cancelDwell();
+            if (ball != null) {
+                ball.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            }
+        }
+    }
+
+    private void setKillHighlighted(boolean highlighted) {
+        if (killHighlighted == highlighted) {
+            return;
+        }
+        killHighlighted = highlighted;
+        if (overlay != null) {
+            overlay.setKillHighlighted(highlighted);
         }
         if (highlighted) {
             cancelDwell();
@@ -949,7 +995,10 @@ public final class FloatingBallController {
                 lastRawX = rawX;
                 lastRawY = rawY;
                 updateHighlightAt(rawX, rawY);
-                if (ocrHighlighted) {
+                if (killHighlighted) {
+                    collapse();
+                    callbacks.onKillApp();
+                } else if (ocrHighlighted) {
                     collapse();
                     callbacks.onScreenOcr();
                 } else if (highlightIndex >= 0) {

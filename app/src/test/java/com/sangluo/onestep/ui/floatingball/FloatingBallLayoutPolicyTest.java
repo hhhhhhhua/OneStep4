@@ -40,6 +40,19 @@ public class FloatingBallLayoutPolicyTest {
     }
 
     @Test
+    public void killControlMirrorsScreenOcrAcrossTheSwitch() {
+        float switchCenterX = 200f;
+        float itemRadius = 20f;
+
+        assertEquals(switchCenterX + itemRadius
+                        * FloatingBallLayoutPolicy.OCR_OFFSET_ITEM_RADII,
+                FloatingBallLayoutPolicy.ocrCenterX(switchCenterX, itemRadius), DELTA);
+        assertEquals(switchCenterX - itemRadius
+                        * FloatingBallLayoutPolicy.KILL_OFFSET_ITEM_RADII,
+                FloatingBallLayoutPolicy.killCenterX(switchCenterX, itemRadius), DELTA);
+    }
+
+    @Test
     public void hitTestReturnsNearestSlotInsideTheHitArea() {
         float[] centers = FloatingBallLayoutPolicy.computeCenters(100f, 100f, 100f, 4);
 

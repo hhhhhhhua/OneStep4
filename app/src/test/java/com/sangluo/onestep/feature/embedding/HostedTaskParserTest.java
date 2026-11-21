@@ -138,6 +138,50 @@ public class HostedTaskParserTest {
     }
 
     @Test
+    public void findsTopVisibleActivityOfDisplayRegardlessOfPackage() {
+        String stackList = "RootTask id=72342 bounds=[0,0][824,1648] displayId=24 userId=0\n"
+                + "  taskId=72342: com.android.settings/com.oplus.settings.feature"
+                + ".homepage.OplusSettingsHomepageActivity bounds=[0,0][824,1648] "
+                + "userId=0 visible=true topActivity=ComponentInfo{com.android.settings/"
+                + "com.oplus.settings.feature.homepage.OplusSettingsHomepageActivity}\n"
+                + "RootTask id=72339 bounds=[0,0][824,1648] displayId=24 userId=0\n"
+                + "  taskId=72339: com.sangluo.onestepc16/com.sangluo.onestep.MainActivity "
+                + "bounds=[0,0][824,1648] userId=0 visible=false "
+                + "topActivity=ComponentInfo{com.sangluo.onestepc16/"
+                + "com.sangluo.onestep.MainActivity}\n"
+                + "RootTask id=3 bounds=[0,0][1080,2376] displayId=0 userId=0\n"
+                + "  taskId=3: com.other/.Main visible=true topActivity=com.other/.Main\n";
+
+        assertEquals("com.android.settings/com.oplus.settings.feature.homepage."
+                        + "OplusSettingsHomepageActivity",
+                HostedTaskParser.findTopVisibleActivity(stackList, 24));
+        assertEquals("com.other/.Main",
+                HostedTaskParser.findTopVisibleActivity(stackList, 0));
+        assertEquals("", HostedTaskParser.findTopVisibleActivity(stackList, 25));
+        assertEquals("", HostedTaskParser.findTopVisibleActivity(null, 24));
+    }
+
+    @Test
+    public void topVisibleActivityIgnoresInvisibleTasks() {
+        String stackList = "RootTask id=8 displayId=12 userId=0\n"
+                + "  taskId=41 visible=false topActivity=com.hidden/.Main\n"
+                + "  taskId=42 visible=true topActivity=com.shown/.Main\n";
+
+        assertEquals("com.shown/.Main",
+                HostedTaskParser.findTopVisibleActivity(stackList, 12));
+    }
+
+    @Test
+    public void topVisibleActivitySkipsTasksWithoutALiveActivity() {
+        String stackList = "RootTask id=8 displayId=12 userId=0\n"
+                + "  taskId=41 visible=true topActivity=null\n"
+                + "  taskId=42 visible=true topActivity=com.shown/.Main\n";
+
+        assertEquals("com.shown/.Main",
+                HostedTaskParser.findTopVisibleActivity(stackList, 12));
+    }
+
+    @Test
     public void findsActivityCountForExactTask() {
         String activities = "* Task{root #333 type=home sz=1}\n"
                 + "  * Task{app #42 type=standard visible=true sz=1}\n"

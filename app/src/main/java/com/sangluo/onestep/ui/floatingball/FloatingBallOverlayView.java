@@ -35,6 +35,8 @@ public final class FloatingBallOverlayView extends View {
     private static final int ADD_BACKGROUND = 0xe62f7df6;
     private static final int SCREEN_OCR_BACKGROUND_LIGHT = 0xff4cc9b8;
     private static final int SCREEN_OCR_BACKGROUND_DARK = 0xff1c7a70;
+    private static final int KILL_BACKGROUND_LIGHT = 0xffff5f57;
+    private static final int KILL_BACKGROUND_DARK = 0xffb3261e;
     private static final int ITEM_STROKE = 0x55ffffff;
     private static final int HIGHLIGHT_STROKE = 0xffffffff;
     private static final int ACTIVE_MAIN_STROKE = 0xff34c759;
@@ -53,6 +55,8 @@ public final class FloatingBallOverlayView extends View {
     private final Paint labelBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint ocrBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint ocrGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint killBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint killGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF labelRect = new RectF();
 
     private List<FloatingBallItem> items = Collections.emptyList();
@@ -63,6 +67,7 @@ public final class FloatingBallOverlayView extends View {
     private float itemRadiusPx;
     private int highlighted = -1;
     private boolean ocrHighlighted;
+    private boolean killHighlighted;
     private float progress;
     private boolean interactive;
     private ValueAnimator animator;
@@ -103,6 +108,11 @@ public final class FloatingBallOverlayView extends View {
         ocrGlyphPaint.setStrokeWidth(dp(2.2f));
         ocrGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
         ocrGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
+        killGlyphPaint.setStyle(Paint.Style.STROKE);
+        killGlyphPaint.setColor(Color.WHITE);
+        killGlyphPaint.setStrokeWidth(dp(2.2f));
+        killGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
+        killGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
     }
 
     public void setTouchListener(TouchListener listener) {
@@ -119,6 +129,7 @@ public final class FloatingBallOverlayView extends View {
         this.itemRadiusPx = itemRadiusPx;
         this.highlighted = -1;
         this.ocrHighlighted = false;
+        this.killHighlighted = false;
         invalidate();
     }
 
@@ -135,6 +146,14 @@ public final class FloatingBallOverlayView extends View {
             return;
         }
         ocrHighlighted = highlighted;
+        invalidate();
+    }
+
+    public void setKillHighlighted(boolean highlighted) {
+        if (killHighlighted == highlighted) {
+            return;
+        }
+        killHighlighted = highlighted;
         invalidate();
     }
 
@@ -158,6 +177,7 @@ public final class FloatingBallOverlayView extends View {
                 items = Collections.emptyList();
                 highlighted = -1;
                 ocrHighlighted = false;
+                killHighlighted = false;
                 invalidate();
             }
         });
@@ -220,6 +240,7 @@ public final class FloatingBallOverlayView extends View {
         }
         if (centers.length >= 2) {
             drawScreenOcr(canvas, centers[0], centers[1]);
+            drawKill(canvas, centers[0], centers[1]);
         }
         canvas.restoreToCount(layer);
 
@@ -293,6 +314,36 @@ public final class FloatingBallOverlayView extends View {
         drawOcrGlyph(canvas, cx, cy, drawRadius);
     }
 
+    /**
+     * 杀死应用 control: the 识屏 control's mirror on the switch's left, in both layers,
+     * so it never takes a ring app slot.
+     */
+    private void drawKill(Canvas canvas, float switchCx, float switchCy) {
+        float cx = FloatingBallLayoutPolicy.killCenterX(switchCx, itemRadiusPx);
+        float cy = switchCy;
+        float baseRadius = itemRadiusPx * 0.86f;
+        float drawRadius = killHighlighted ? baseRadius * 1.12f : baseRadius;
+
+        killBackgroundPaint.setShader(new LinearGradient(
+                cx - drawRadius, cy - drawRadius, cx + drawRadius, cy + drawRadius,
+                KILL_BACKGROUND_LIGHT, KILL_BACKGROUND_DARK,
+                Shader.TileMode.CLAMP));
+        canvas.drawCircle(cx, cy, drawRadius, killBackgroundPaint);
+        killBackgroundPaint.setShader(null);
+        canvas.drawCircle(cx, cy, drawRadius, itemStrokePaint);
+        if (killHighlighted) {
+            canvas.drawCircle(cx, cy, drawRadius + dp(3), highlightPaint);
+        }
+        drawKillGlyph(canvas, cx, cy, drawRadius);
+    }
+
+    /** Cross glyph: kill/close. */
+    private void drawKillGlyph(Canvas canvas, float cx, float cy, float radius) {
+        float half = radius * 0.40f;
+        canvas.drawLine(cx - half, cy - half, cx + half, cy + half, killGlyphPaint);
+        canvas.drawLine(cx - half, cy + half, cx + half, cy - half, killGlyphPaint);
+    }
+
     /** View-finder frame with a lens in the middle: screen recognition. */
     private void drawOcrGlyph(Canvas canvas, float cx, float cy, float radius) {
         float half = radius * 0.52f;
@@ -316,7 +367,8 @@ public final class FloatingBallOverlayView extends View {
     private void drawCaption(Canvas canvas, float alpha) {
         FloatingBallItem highlightedItem = highlighted >= 0 && highlighted < items.size()
                 ? items.get(highlighted) : null;
-        String text = ocrHighlighted ? "识屏"
+        String text = killHighlighted ? "杀死应用"
+                : ocrHighlighted ? "识屏"
                 : highlightedItem != null && !TextUtils.isEmpty(highlightedItem.label())
                         ? highlightedItem.label() : layerLabel;
         if (TextUtils.isEmpty(text)) {
