@@ -21,7 +21,9 @@ import android.view.ViewParent;
 import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
 
+import com.sangluo.onestep.MediaNotificationListenerService;
 import com.sangluo.onestep.data.settings.OneStepSettings;
+import com.sangluo.onestep.feature.notification.NotificationPanelView;
 import com.sangluo.onestep.model.LauncherApp;
 import com.sangluo.onestep.utils.DeviceUtil;
 
@@ -54,6 +56,9 @@ public final class FloatingBallController {
     private static final long DOCK_ANIM_MS = 180L;
     private static final long BACK_SWIPE_MAX_DURATION_MS = 500L;
     private static final float BACK_SWIPE_MIN_DISTANCE_DP = 56f;
+    /** A quick downward swipe on the ball opens the notification panel. */
+    private static final long DOWN_SWIPE_MAX_DURATION_MS = 500L;
+    private static final float DOWN_SWIPE_MIN_DISTANCE_DP = 56f;
     private static final long ATTACH_RETRY_MS = 100L;
     private static final long RAISE_THROTTLE_MS = 250L;
     /**
@@ -110,6 +115,17 @@ public final class FloatingBallController {
 
         /** Captures the display and opens the screenshot editor. */
         void onScreenshot();
+
+        /** Opens the notification's application inside OneStep. */
+        void onOpenNotification(
+                MediaNotificationListenerService.NotificationSnapshot notification);
+
+        boolean hasNotificationAccess();
+
+        void onRequestNotificationAccess();
+
+        /** The grouped notification panel window was shown or hidden. */
+        void onNotificationPanelChanged(boolean shown);
 
         void onExpandedChanged(boolean expanded);
 
@@ -174,6 +190,18 @@ public final class FloatingBallController {
     private boolean screenshotHighlighted;
     private float screenshotCenterX;
     private float screenshotCenterY;
+    /** Screen-positioned notification control, below the screen-recognition control. */
+    private boolean notificationHighlighted;
+    private float notificationCenterX;
+    private float notificationCenterY;
+
+    private final MediaNotificationListenerService.NotificationUpdateListener
+            notificationUpdateListener = this::onNotificationsChanged;
+
+    private NotificationPanelView notificationPanel;
+    private WindowManager.LayoutParams notificationPanelParams;
+    private boolean notificationPanelAttached;
+    private boolean notificationPanelShown;
 
     private float positionYRatio = DEFAULT_Y_RATIO;
     private boolean dockedRight = true;
@@ -219,6 +247,8 @@ public final class FloatingBallController {
         overlay.setVisibility(View.GONE);
         overlay.setTouchListener(this::onOverlayTouch);
         overlayParams = createOverlayParams();
+        MediaNotificationListenerService.addNotificationUpdateListener(
+                notificationUpdateListener);
         refresh();
         onSettingsChanged();
     }
@@ -230,6 +260,12 @@ public final class FloatingBallController {
         cancelLongPress();
         cancelDwell();
         cancelLockTimeout();
+        MediaNotificationListenerService.removeNotificationUpdateListener(
+                notificationUpdateListener);
+        notificationPanelShown = false;
+        removeNotificationPanelWindow();
+        notificationPanel = null;
+        notificationPanelParams = null;
         removeBallWindow();
         removeOverlayWindow();
         activity.getWindow().getDecorView().removeCallbacks(attachRetryRunnable);
@@ -396,6 +432,7 @@ public final class FloatingBallController {
         ball.setContentLabel(callbacks.collapsedLabel());
         ball.setAlpha(opacityAlpha());
         ball.setBadgeCount(callbacks.openedAppItems().size());
+        ball.setUnreadBadgeCount(MediaNotificationListenerService.getUnreadCount());
         if (state == State.IDLE && (dockAnimator == null || !dockAnimator.isRunning())) {
             applyBallPosition();
         }
@@ -421,7 +458,8 @@ public final class FloatingBallController {
      */
     public void raise() {
         if (!attached || ball == null || !ballWindowAttached || ballUsesSystemOverlay
-                || state != State.IDLE || suppressed || !callbacks.isEnabled()) {
+                || state != State.IDLE || suppressed || notificationPanelShown
+                || !callbacks.isEnabled()) {
             return;
         }
         long now = SystemClock.uptimeMillis();
@@ -452,6 +490,9 @@ public final class FloatingBallController {
             return;
         }
         this.suppressed = suppressed;
+        if (suppressed) {
+            hideNotificationPanel();
+        }
         refresh();
     }
 
@@ -511,12 +552,14 @@ public final class FloatingBallController {
         ocrHighlighted = false;
         killHighlighted = false;
         screenshotHighlighted = false;
+        notificationHighlighted = false;
         if (overlay != null) {
             setOverlayInteractive(false);
             overlay.setHighlight(-1);
             overlay.setOcrHighlighted(false);
             overlay.setKillHighlighted(false);
             overlay.setScreenshotHighlighted(false);
+            overlay.setNotificationHighlighted(false);
             overlay.playCollapse();
         }
         if (ball != null) {
@@ -550,12 +593,14 @@ public final class FloatingBallController {
         ocrHighlighted = false;
         killHighlighted = false;
         screenshotHighlighted = false;
+        hideNotificationPanel();
         if (overlay != null) {
             setOverlayInteractive(false);
             overlay.setHighlight(-1);
             overlay.setOcrHighlighted(false);
             overlay.setKillHighlighted(false);
             overlay.setScreenshotHighlighted(false);
+            overlay.setNotificationHighlighted(false);
         }
         setSuppressed(true);
         if (overlay != null) {
@@ -574,6 +619,159 @@ public final class FloatingBallController {
             return;
         }
         setSuppressed(false);
+    }
+
+    // ----------------------------------------------------------- notifications
+
+    /** Opens the grouped notification panel, collapsing the ring first. */
+    public void showNotificationPanel() {
+        if (!attached || suppressed || !callbacks.isEnabled()) {
+            return;
+        }
+        collapse();
+        ensureWindows();
+        if (notificationPanel == null) {
+            notificationPanel = new NotificationPanelView(activity);
+            notificationPanel.setCallbacks(new NotificationPanelView.Callbacks() {
+                @Override
+                public void onClose() {
+                    hideNotificationPanel();
+                }
+
+                @Override
+                public void onOpenNotification(
+                        MediaNotificationListenerService.NotificationSnapshot notification) {
+                    hideNotificationPanel();
+                    callbacks.onOpenNotification(notification);
+                }
+
+                @Override
+                public void onDismissNotification(
+                        MediaNotificationListenerService.NotificationSnapshot notification) {
+                    MediaNotificationListenerService.dismissNotification(notification.key);
+                }
+
+                @Override
+                public void onDismissApp(String packageName) {
+                    MediaNotificationListenerService.dismissNotificationsForPackage(packageName);
+                }
+
+                @Override
+                public void onDismissAll() {
+                    MediaNotificationListenerService.dismissAllNotifications();
+                }
+
+                @Override
+                public void onRequestAccess() {
+                    callbacks.onRequestNotificationAccess();
+                }
+
+                @Override
+                public boolean hasNotificationAccess() {
+                    return callbacks.hasNotificationAccess();
+                }
+            });
+            notificationPanelParams = createNotificationPanelParams();
+        }
+        notificationPanel.setContent(MediaNotificationListenerService.getNotifications(),
+                callbacks.hasNotificationAccess());
+        if (!notificationPanelAttached) {
+            IBinder token = activity.getWindow().getDecorView().getWindowToken();
+            if (token == null) {
+                return;
+            }
+            boolean allowOverlay = ballUsesSystemOverlay;
+            notificationPanelParams.token = allowOverlay ? null : token;
+            if (!addSubWindow(notificationPanel, notificationPanelParams,
+                    "notification panel", token, allowOverlay)) {
+                return;
+            }
+            notificationPanelAttached = true;
+        }
+        if (!notificationPanelShown) {
+            notificationPanelShown = true;
+            notificationPanel.playShow();
+            callbacks.onNotificationPanelChanged(true);
+            Log.d(TAG, "show notification panel");
+        }
+        if (callbacks.hasNotificationAccess()) {
+            if (!MediaNotificationListenerService.isConnected()) {
+                // The listener can be enabled but unbound right after an APK update or a
+                // reboot; ask the activity to rebind before the user sees an empty list.
+                callbacks.onRequestNotificationAccess();
+            }
+            MediaNotificationListenerService.markAllSeen();
+        }
+    }
+
+    public boolean isNotificationPanelShown() {
+        return notificationPanelShown;
+    }
+
+    public void hideNotificationPanel() {
+        if (!notificationPanelShown) {
+            return;
+        }
+        notificationPanelShown = false;
+        removeNotificationPanelWindow();
+        if (notificationPanel != null) {
+            notificationPanel.setVisibility(View.GONE);
+        }
+        Log.d(TAG, "hide notification panel");
+        callbacks.onNotificationPanelChanged(false);
+        scheduleAutoDock();
+    }
+
+    /** Re-reads the notification list while the panel (or its badge) is visible. */
+    public void refreshNotificationPanel() {
+        if (notificationPanel == null) {
+            return;
+        }
+        notificationPanel.setContent(MediaNotificationListenerService.getNotifications(),
+                callbacks.hasNotificationAccess());
+    }
+
+    private void onNotificationsChanged() {
+        activity.runOnUiThread(() -> {
+            if (!attached) {
+                return;
+            }
+            if (ball != null) {
+                ball.setUnreadBadgeCount(MediaNotificationListenerService.getUnreadCount());
+            }
+            if (notificationPanelShown && notificationPanel != null) {
+                refreshNotificationPanel();
+                MediaNotificationListenerService.markAllSeen();
+            }
+        });
+    }
+
+    private WindowManager.LayoutParams createNotificationPanelParams() {
+        DisplayMetrics metrics = screenMetrics();
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                metrics.widthPixels,
+                metrics.heightPixels,
+                SUB_WINDOW_TYPE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.setTitle("OneStep notification panel");
+        return params;
+    }
+
+    private void removeNotificationPanelWindow() {
+        if (!notificationPanelAttached || notificationPanel == null) {
+            notificationPanelAttached = false;
+            return;
+        }
+        try {
+            activity.getWindowManager().removeViewImmediate(notificationPanel);
+        } catch (IllegalArgumentException ignored) {
+        }
+        notificationPanelAttached = false;
     }
 
     // ---------------------------------------------------------------- gestures
@@ -648,6 +846,24 @@ public final class FloatingBallController {
         float dx = rawX - downRawX;
         float dy = rawY - downRawY;
         long duration = Math.max(0L, SystemClock.uptimeMillis() - downEventTime);
+        if (dy >= dp(DOWN_SWIPE_MIN_DISTANCE_DP)
+                && Math.abs(dy) >= Math.abs(dx) * 1.25f
+                && duration <= DOWN_SWIPE_MAX_DURATION_MS
+                && (state == State.PRESSED || state == State.DRAGGING)) {
+            cancelLongPress();
+            cancelAutoDock();
+            state = State.IDLE;
+            docked = false;
+            if (ball != null) {
+                ball.setPressed(false);
+                ball.performHapticFeedback(HapticFeedbackConstants.CONFIRM);
+            }
+            Log.d(TAG, "ball swipe down: open notifications");
+            snapToSide();
+            scheduleAutoDock();
+            showNotificationPanel();
+            return;
+        }
         if (dx <= -dp(BACK_SWIPE_MIN_DISTANCE_DP)
                 && Math.abs(dx) >= Math.abs(dy) * 1.25f
                 && duration <= BACK_SWIPE_MAX_DURATION_MS
@@ -692,6 +908,9 @@ public final class FloatingBallController {
                 } else if (ocrHighlighted) {
                     collapse();
                     callbacks.onScreenOcr();
+                } else if (notificationHighlighted) {
+                    collapse();
+                    showNotificationPanel();
                 } else if (highlightIndex >= 0) {
                     execute(highlightIndex);
                 } else {
@@ -796,6 +1015,11 @@ public final class FloatingBallController {
         screenshotCenterY = FloatingBallLayoutPolicy.screenshotCenterY(
                 ringCenters[1], itemRadiusPx, screenMetrics().heightPixels);
         screenshotHighlighted = false;
+        notificationCenterX = FloatingBallLayoutPolicy.notificationCenterX(
+                ringCenters[0], itemRadiusPx);
+        notificationCenterY = FloatingBallLayoutPolicy.notificationCenterY(
+                ringCenters[1], itemRadiusPx, screenMetrics().heightPixels);
+        notificationHighlighted = false;
         overlay.setRing(items, layerLabel(), geometry[0], geometry[1], geometry[2],
                 itemRadiusPx);
         overlay.setHighlight(-1);
@@ -885,7 +1109,8 @@ public final class FloatingBallController {
         boolean onOcr = isOcrHit(touchX, touchY);
         boolean onKill = isKillHit(touchX, touchY);
         boolean onScreenshot = isScreenshotHit(touchX, touchY);
-        if ((onOcr || onKill || onScreenshot) && index >= 0) {
+        boolean onNotification = isNotificationHit(touchX, touchY);
+        if ((onOcr || onKill || onScreenshot || onNotification) && index >= 0) {
             // The satellites sit close to the ring near 12 o'clock; nearest wins.
             float ringDistance = distanceSquared(touchX, touchY,
                     ringCenters[index * 2], ringCenters[index * 2 + 1]);
@@ -895,12 +1120,15 @@ public final class FloatingBallController {
                     killCenterX, killCenterY) < ringDistance;
             onScreenshot = onScreenshot && distanceSquared(touchX, touchY,
                     screenshotCenterX, screenshotCenterY) < ringDistance;
+            onNotification = onNotification && distanceSquared(touchX, touchY,
+                    notificationCenterX, notificationCenterY) < ringDistance;
         }
-        if (onOcr || onKill || onScreenshot) {
+        if (onOcr || onKill || onScreenshot || onNotification) {
             float bestDistance = Float.MAX_VALUE;
             boolean bestOcr = false;
             boolean bestKill = false;
             boolean bestScreenshot = false;
+            boolean bestNotification = false;
             if (onOcr) {
                 bestDistance = distanceSquared(touchX, touchY, ocrCenterX, ocrCenterY);
                 bestOcr = true;
@@ -912,25 +1140,40 @@ public final class FloatingBallController {
                     bestOcr = false;
                     bestKill = true;
                     bestScreenshot = false;
+                    bestNotification = false;
                 }
             }
             if (onScreenshot) {
                 float distance = distanceSquared(
                         touchX, touchY, screenshotCenterX, screenshotCenterY);
                 if (distance < bestDistance) {
+                    bestDistance = distance;
                     bestOcr = false;
                     bestKill = false;
                     bestScreenshot = true;
+                    bestNotification = false;
+                }
+            }
+            if (onNotification) {
+                float distance = distanceSquared(
+                        touchX, touchY, notificationCenterX, notificationCenterY);
+                if (distance < bestDistance) {
+                    bestOcr = false;
+                    bestKill = false;
+                    bestScreenshot = false;
+                    bestNotification = true;
                 }
             }
             onOcr = bestOcr;
             onKill = bestKill;
             onScreenshot = bestScreenshot;
+            onNotification = bestNotification;
             index = -1;
         }
         setOcrHighlighted(onOcr);
         setKillHighlighted(onKill);
         setScreenshotHighlighted(onScreenshot);
+        setNotificationHighlighted(onNotification);
         setHighlight(index);
     }
 
@@ -966,6 +1209,12 @@ public final class FloatingBallController {
     private boolean isScreenshotHit(float touchX, float touchY) {
         float threshold = itemRadiusPx + hitSlopPx;
         return distanceSquared(touchX, touchY, screenshotCenterX, screenshotCenterY)
+                <= threshold * threshold;
+    }
+
+    private boolean isNotificationHit(float touchX, float touchY) {
+        float threshold = itemRadiusPx + hitSlopPx;
+        return distanceSquared(touchX, touchY, notificationCenterX, notificationCenterY)
                 <= threshold * threshold;
     }
 
@@ -1008,6 +1257,22 @@ public final class FloatingBallController {
         screenshotHighlighted = highlighted;
         if (overlay != null) {
             overlay.setScreenshotHighlighted(highlighted);
+        }
+        if (highlighted) {
+            cancelDwell();
+            if (ball != null) {
+                ball.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            }
+        }
+    }
+
+    private void setNotificationHighlighted(boolean highlighted) {
+        if (notificationHighlighted == highlighted) {
+            return;
+        }
+        notificationHighlighted = highlighted;
+        if (overlay != null) {
+            overlay.setNotificationHighlighted(highlighted);
         }
         if (highlighted) {
             cancelDwell();
@@ -1117,6 +1382,9 @@ public final class FloatingBallController {
                 } else if (ocrHighlighted) {
                     collapse();
                     callbacks.onScreenOcr();
+                } else if (notificationHighlighted) {
+                    collapse();
+                    showNotificationPanel();
                 } else if (highlightIndex >= 0) {
                     execute(highlightIndex);
                 } else {

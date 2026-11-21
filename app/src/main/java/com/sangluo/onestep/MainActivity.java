@@ -51,6 +51,7 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
 import android.provider.MediaStore;
+import android.service.notification.NotificationListenerService;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
@@ -1040,6 +1041,10 @@ public class MainActivity extends Activity {
             recoverAfterKernelSuAuthorizationReturn();
         }
         resumeFullHome();
+        if (floatingBallController != null) {
+            rebindNotificationListenerIfEnabled();
+            floatingBallController.refreshNotificationPanel();
+        }
     }
 
     /** Applies the new KernelSU authorization without destroying the existing HOME task. */
@@ -1910,6 +1915,7 @@ public class MainActivity extends Activity {
         stopRunningTaskMonitoring();
         pauseMediaMonitoring();
         if (floatingBallController != null) {
+            floatingBallController.hideNotificationPanel();
             floatingBallController.collapse();
         }
         super.onPause();
@@ -7992,6 +7998,11 @@ public class MainActivity extends Activity {
     }
 
     private void handleSystemBack() {
+        if (floatingBallController != null
+                && floatingBallController.isNotificationPanelShown()) {
+            floatingBallController.hideNotificationPanel();
+            return;
+        }
         if (handleOverlayBack()) {
             return;
         }
@@ -9964,6 +9975,7 @@ public class MainActivity extends Activity {
     }
 
     private FloatingBallController createFloatingBallController() {
+        rebindNotificationListenerIfEnabled();
         return new FloatingBallController(this, new FloatingBallController.Callbacks() {
             @Override
             public boolean isEnabled() {
@@ -10055,6 +10067,33 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onOpenNotification(
+                    MediaNotificationListenerService.NotificationSnapshot notification) {
+                openNotificationFromPanel(notification);
+            }
+
+            @Override
+            public boolean hasNotificationAccess() {
+                return MediaNotificationListenerService.isAccessGranted(MainActivity.this);
+            }
+
+            @Override
+            public void onRequestNotificationAccess() {
+                requestNotificationAccessForPanel();
+            }
+
+            @Override
+            public void onNotificationPanelChanged(boolean shown) {
+                // The panel is a full-screen window of its own; keep the side-slot input
+                // shields from being recreated above it while it is open.
+                if (shown) {
+                    suspendWindowInputRouting();
+                } else {
+                    scheduleSideInputProtectionSync();
+                }
+            }
+
+            @Override
             public void onExpandedChanged(boolean expanded) {
                 // The expanded ring must sit above the side-slot input shields, otherwise
                 // taps on the ring would be swallowed by the shield windows.
@@ -10078,6 +10117,144 @@ public class MainActivity extends Activity {
                 mainHandler.post(MainActivity.this::raiseFloatingBallAboveShields);
             }
         });
+    }
+
+    private void openNotificationFromPanel(
+            MediaNotificationListenerService.NotificationSnapshot notification) {
+        if (activityDestroyed || notification == null) {
+            return;
+        }
+        // Tapping a notification consumes it, like the system notification shade.
+        MediaNotificationListenerService.dismissNotification(notification.key);
+        final String packageName = notification.packageName;
+        final String appLabel = notification.appLabel;
+        mediaRootExecutor.execute(() -> {
+            LauncherApp app = findLauncherAppForPackage(packageName);
+            mainHandler.post(() -> {
+                if (activityDestroyed) {
+                    return;
+                }
+                if (app == null) {
+                    Toast.makeText(MainActivity.this,
+                            "无法在 OneStep 打开该应用：" + appLabel, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                addOrFocusApp(app);
+            });
+        });
+    }
+
+    private LauncherApp findLauncherAppForPackage(String packageName) {
+        if (launcherAppRepository == null || TextUtils.isEmpty(packageName)) {
+            return null;
+        }
+        LauncherApp app = launcherAppRepository.loadLauncherApp(packageName);
+        if (app != null) {
+            return app;
+        }
+        List<LauncherApp> apps = launcherAppRepository.loadLauncherAppsForPackage(packageName);
+        return apps.isEmpty() ? null : apps.get(0);
+    }
+
+    private void requestNotificationAccessForPanel() {
+        if (activityDestroyed) {
+            return;
+        }
+        ComponentName component = MediaNotificationListenerService.getComponentName(this);
+        if (isNotificationListenerEnabled(component)) {
+            rebindNotificationListener(component);
+            return;
+        }
+        Toast.makeText(this, "正在开启通知访问…", Toast.LENGTH_SHORT).show();
+        mediaRootExecutor.execute(() -> {
+            boolean enabled = enableNotificationListenerWithShell(component);
+            mainHandler.post(() -> {
+                if (activityDestroyed) {
+                    return;
+                }
+                if (!enabled && !isNotificationListenerEnabled(component)) {
+                    Toast.makeText(this, "无法自动开启通知访问，请在系统设置中手动开启",
+                            Toast.LENGTH_LONG).show();
+                    try {
+                        startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+                    } catch (RuntimeException ignored) {
+                    }
+                    return;
+                }
+                Toast.makeText(this, "已开启通知访问", Toast.LENGTH_SHORT).show();
+                rebindNotificationListener(component);
+            });
+        });
+    }
+
+    private void rebindNotificationListener(ComponentName component) {
+        try {
+            NotificationListenerService.requestRebind(component);
+        } catch (RuntimeException ignored) {
+        }
+        if (floatingBallController != null) {
+            floatingBallController.refreshNotificationPanel();
+        }
+        mainHandler.postDelayed(() -> {
+            if (!activityDestroyed && floatingBallController != null) {
+                floatingBallController.refreshNotificationPanel();
+            }
+        }, 800L);
+    }
+
+    private void rebindNotificationListenerIfEnabled() {
+        ComponentName component = MediaNotificationListenerService.getComponentName(this);
+        if (!isNotificationListenerEnabled(component)) {
+            return;
+        }
+        try {
+            NotificationListenerService.requestRebind(component);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private boolean isNotificationListenerEnabled(ComponentName componentName) {
+        String enabledListeners = Settings.Secure.getString(getContentResolver(),
+                "enabled_notification_listeners");
+        return isNotificationComponentListed(enabledListeners,
+                componentName.flattenToString())
+                || isNotificationComponentListed(enabledListeners,
+                        componentName.flattenToShortString());
+    }
+
+    private boolean isNotificationComponentListed(String enabledListeners, String component) {
+        if (TextUtils.isEmpty(enabledListeners) || TextUtils.isEmpty(component)) {
+            return false;
+        }
+        String normalized = ":" + enabledListeners + ":";
+        return normalized.contains(":" + component + ":");
+    }
+
+    private boolean enableNotificationListenerWithShell(ComponentName componentName) {
+        String component = componentName.flattenToString();
+        ShellCommandResult allowResult = runMainPrivilegedCommand(
+                "cmd notification allow_listener " + mainShellQuote(component),
+                "allow notification listener", true);
+        if (allowResult.exitCode == 0) {
+            return true;
+        }
+        ShellCommandResult currentResult = runMainPrivilegedCommand(
+                "settings get secure enabled_notification_listeners",
+                "read notification listeners", false);
+        String current = currentResult.output == null ? "" : currentResult.output.trim();
+        if (TextUtils.equals(current, "null")) {
+            current = "";
+        }
+        if (isNotificationComponentListed(current, component)
+                || isNotificationComponentListed(current,
+                        componentName.flattenToShortString())) {
+            return true;
+        }
+        String next = TextUtils.isEmpty(current) ? component : current + ":" + component;
+        ShellCommandResult putResult = runMainPrivilegedCommand(
+                "settings put secure enabled_notification_listeners " + mainShellQuote(next),
+                "write notification listeners", true);
+        return putResult.exitCode == 0;
     }
 
     /** Fires the ColorOS smart-sidebar 识屏 service through the Shizuku user service. */

@@ -8,6 +8,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
@@ -39,6 +40,8 @@ public final class FloatingBallOverlayView extends View {
     private static final int KILL_BACKGROUND_DARK = 0xffb3261e;
     private static final int SCREENSHOT_BACKGROUND_LIGHT = 0xff5b9bff;
     private static final int SCREENSHOT_BACKGROUND_DARK = 0xff2557d6;
+    private static final int NOTIFICATION_BACKGROUND_LIGHT = 0xffe8a33d;
+    private static final int NOTIFICATION_BACKGROUND_DARK = 0xffb57515;
     private static final int ITEM_STROKE = 0x55ffffff;
     private static final int HIGHLIGHT_STROKE = 0xffffffff;
     private static final int ACTIVE_MAIN_STROKE = 0xff34c759;
@@ -61,8 +64,11 @@ public final class FloatingBallOverlayView extends View {
     private final Paint killGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint screenshotBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint screenshotGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint notificationBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint notificationGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF labelRect = new RectF();
     private final RectF screenshotBodyRect = new RectF();
+    private final Path bellPath = new Path();
 
     private List<FloatingBallItem> items = Collections.emptyList();
     private String layerLabel = "";
@@ -74,6 +80,7 @@ public final class FloatingBallOverlayView extends View {
     private boolean ocrHighlighted;
     private boolean killHighlighted;
     private boolean screenshotHighlighted;
+    private boolean notificationHighlighted;
     private float progress;
     private boolean interactive;
     private ValueAnimator animator;
@@ -124,6 +131,11 @@ public final class FloatingBallOverlayView extends View {
         screenshotGlyphPaint.setStrokeWidth(dp(1.8f));
         screenshotGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
         screenshotGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
+        notificationGlyphPaint.setStyle(Paint.Style.STROKE);
+        notificationGlyphPaint.setColor(Color.WHITE);
+        notificationGlyphPaint.setStrokeWidth(dp(1.9f));
+        notificationGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
+        notificationGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
     }
 
     public void setTouchListener(TouchListener listener) {
@@ -142,6 +154,7 @@ public final class FloatingBallOverlayView extends View {
         this.ocrHighlighted = false;
         this.killHighlighted = false;
         this.screenshotHighlighted = false;
+        this.notificationHighlighted = false;
         invalidate();
     }
 
@@ -177,6 +190,14 @@ public final class FloatingBallOverlayView extends View {
         invalidate();
     }
 
+    public void setNotificationHighlighted(boolean highlighted) {
+        if (notificationHighlighted == highlighted) {
+            return;
+        }
+        notificationHighlighted = highlighted;
+        invalidate();
+    }
+
     public void setInteractive(boolean interactive) {
         this.interactive = interactive;
         setClickable(interactive);
@@ -199,6 +220,7 @@ public final class FloatingBallOverlayView extends View {
                 ocrHighlighted = false;
                 killHighlighted = false;
                 screenshotHighlighted = false;
+                notificationHighlighted = false;
                 invalidate();
             }
         });
@@ -263,6 +285,7 @@ public final class FloatingBallOverlayView extends View {
             drawScreenOcr(canvas, centers[0], centers[1]);
             drawKill(canvas, centers[0], centers[1]);
             drawScreenshot(canvas, centers[0], centers[1]);
+            drawNotification(canvas, centers[0], centers[1]);
         }
         canvas.restoreToCount(layer);
 
@@ -383,6 +406,48 @@ public final class FloatingBallOverlayView extends View {
         drawScreenshotGlyph(canvas, cx, cy, drawRadius);
     }
 
+    /**
+     * 通知 control: below the 识屏 control, on the right, in both layers, so it never
+     * takes a ring app slot.
+     */
+    private void drawNotification(Canvas canvas, float switchCx, float switchCy) {
+        float cx = FloatingBallLayoutPolicy.notificationCenterX(switchCx, itemRadiusPx);
+        float cy = FloatingBallLayoutPolicy.notificationCenterY(
+                switchCy, itemRadiusPx, getHeight());
+        float baseRadius = itemRadiusPx * 0.86f;
+        float drawRadius = notificationHighlighted ? baseRadius * 1.12f : baseRadius;
+
+        notificationBackgroundPaint.setShader(new LinearGradient(
+                cx - drawRadius, cy - drawRadius, cx + drawRadius, cy + drawRadius,
+                NOTIFICATION_BACKGROUND_LIGHT, NOTIFICATION_BACKGROUND_DARK,
+                Shader.TileMode.CLAMP));
+        canvas.drawCircle(cx, cy, drawRadius, notificationBackgroundPaint);
+        notificationBackgroundPaint.setShader(null);
+        canvas.drawCircle(cx, cy, drawRadius, itemStrokePaint);
+        if (notificationHighlighted) {
+            canvas.drawCircle(cx, cy, drawRadius + dp(3), highlightPaint);
+        }
+        drawNotificationGlyph(canvas, cx, cy, drawRadius);
+    }
+
+    /** Bell glyph: domed body, flared rim and a clapper. */
+    private void drawNotificationGlyph(Canvas canvas, float cx, float cy, float radius) {
+        bellPath.reset();
+        bellPath.moveTo(cx - radius * 0.44f, cy + radius * 0.26f);
+        bellPath.lineTo(cx - radius * 0.29f, cy + radius * 0.10f);
+        bellPath.lineTo(cx - radius * 0.29f, cy - radius * 0.16f);
+        bellPath.quadTo(cx - radius * 0.26f, cy - radius * 0.44f,
+                cx, cy - radius * 0.46f);
+        bellPath.quadTo(cx + radius * 0.26f, cy - radius * 0.44f,
+                cx + radius * 0.29f, cy - radius * 0.16f);
+        bellPath.lineTo(cx + radius * 0.29f, cy + radius * 0.10f);
+        bellPath.lineTo(cx + radius * 0.44f, cy + radius * 0.26f);
+        bellPath.close();
+        canvas.drawPath(bellPath, notificationGlyphPaint);
+        canvas.drawCircle(cx, cy + radius * 0.37f, radius * 0.07f,
+                notificationGlyphPaint);
+    }
+
     /** Camera glyph: rounded body, top bump and a lens. */
     private void drawScreenshotGlyph(Canvas canvas, float cx, float cy, float radius) {
         float halfWidth = radius * 0.46f;
@@ -430,6 +495,7 @@ public final class FloatingBallOverlayView extends View {
         String text = screenshotHighlighted ? "截图"
                 : killHighlighted ? "杀死应用"
                 : ocrHighlighted ? "识屏"
+                : notificationHighlighted ? "通知"
                 : highlightedItem != null && !TextUtils.isEmpty(highlightedItem.label())
                         ? highlightedItem.label() : layerLabel;
         if (TextUtils.isEmpty(text)) {

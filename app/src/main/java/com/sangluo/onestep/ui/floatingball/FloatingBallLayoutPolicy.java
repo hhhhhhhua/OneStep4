@@ -22,6 +22,8 @@ public final class FloatingBallLayoutPolicy {
     public static final float KILL_OFFSET_ITEM_RADII = 2.15f;
     /** Distance of the 截图 control from the switch centre, in item radii. */
     public static final float SCREENSHOT_OFFSET_ITEM_RADII = 2.15f;
+    /** Distance of the 通知 control from the switch centre, in item radii. */
+    public static final float NOTIFICATION_OFFSET_ITEM_RADII = 2.15f;
     /** Minimum distance a satellite keeps from the screen edge, in item radii. */
     public static final float SATELLITE_EDGE_ITEM_RADII = 1.15f;
 
@@ -106,6 +108,26 @@ public final class FloatingBallLayoutPolicy {
         float edge = itemRadiusPx * SATELLITE_EDGE_ITEM_RADII;
         float maxY = Math.max(edge, heightPx - edge);
         float target = switchCenterY - itemRadiusPx * SCREENSHOT_OFFSET_ITEM_RADII;
+        return Math.max(edge, Math.min(maxY, target));
+    }
+
+    /**
+     * Horizontal centre of the 通知 control: below the 识屏 control, on the right
+     * side, so it never costs an app position.
+     */
+    public static float notificationCenterX(float switchCenterX, float itemRadiusPx) {
+        return switchCenterX + itemRadiusPx * NOTIFICATION_OFFSET_ITEM_RADII;
+    }
+
+    /**
+     * Vertical centre of the 通知 control: below the 识屏 control, clamped to the
+     * screen so the satellite never leaves the visible area near the bottom edge.
+     */
+    public static float notificationCenterY(float switchCenterY, float itemRadiusPx,
+                                            float heightPx) {
+        float edge = itemRadiusPx * SATELLITE_EDGE_ITEM_RADII;
+        float maxY = Math.max(edge, heightPx - edge);
+        float target = switchCenterY + itemRadiusPx * NOTIFICATION_OFFSET_ITEM_RADII;
         return Math.max(edge, Math.min(maxY, target));
     }
 

@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -21,12 +22,16 @@ public final class FloatingBallView extends View {
     private static final int BACKGROUND_COLOR = 0xdd1b1f24;
     private static final int STROKE_COLOR = 0x66ffffff;
     private static final int BADGE_COLOR = 0xff0a84ff;
+    private static final int UNREAD_BADGE_COLOR = 0xffff3b30;
 
     private final Paint badgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint badgeTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint unreadBadgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF unreadBadgeRect = new RectF();
     private Drawable icon;
     private String contentLabel = "";
     private int badgeCount;
+    private int unreadBadgeCount;
     private TouchListener touchListener;
 
     public FloatingBallView(Context context) {
@@ -45,6 +50,7 @@ public final class FloatingBallView extends View {
         badgeTextPaint.setTextAlign(Paint.Align.CENTER);
         badgeTextPaint.setTextSize(sp(10));
         badgeTextPaint.setTypeface(Typeface.DEFAULT_BOLD);
+        unreadBadgePaint.setColor(UNREAD_BADGE_COLOR);
         setContentDescription("OneStep 悬浮球");
     }
 
@@ -73,6 +79,16 @@ public final class FloatingBallView extends View {
         invalidate();
     }
 
+    /** Red unread-notification pill in the top-left corner, visible while collapsed. */
+    public void setUnreadBadgeCount(int count) {
+        int sanitized = Math.max(0, count);
+        if (sanitized == unreadBadgeCount) {
+            return;
+        }
+        unreadBadgeCount = sanitized;
+        invalidate();
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -93,6 +109,22 @@ public final class FloatingBallView extends View {
         if (badgeCount > 0) {
             drawBadge(canvas);
         }
+        if (unreadBadgeCount > 0) {
+            drawUnreadBadge(canvas);
+        }
+    }
+
+    private void drawUnreadBadge(Canvas canvas) {
+        String text = unreadBadgeCount > 99 ? "99+" : String.valueOf(unreadBadgeCount);
+        float height = dp(18);
+        float width = Math.max(height, badgeTextPaint.measureText(text) + dp(9));
+        float left = dp(1);
+        float top = dp(1);
+        unreadBadgeRect.set(left, top, left + width, top + height);
+        canvas.drawRoundRect(unreadBadgeRect, height / 2f, height / 2f, unreadBadgePaint);
+        Paint.FontMetrics metrics = badgeTextPaint.getFontMetrics();
+        float baseline = top + height / 2f - (metrics.ascent + metrics.descent) / 2f;
+        canvas.drawText(text, left + width / 2f, baseline, badgeTextPaint);
     }
 
     private void drawBadge(Canvas canvas) {

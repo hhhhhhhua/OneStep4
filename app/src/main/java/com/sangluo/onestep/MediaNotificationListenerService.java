@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.app.PendingIntent;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
@@ -25,7 +26,11 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,9 +45,21 @@ public class MediaNotificationListenerService extends NotificationListenerServic
             new ArrayList<>();
     private static final CopyOnWriteArrayList<MediaUpdateListener> LISTENERS =
             new CopyOnWriteArrayList<>();
+    private static final List<NotificationSnapshot> NOTIFICATIONS = new ArrayList<>();
+    private static final Map<String, String> SEEN_SIGNATURES = new HashMap<>();
+    private static final Map<String, String> APP_LABEL_CACHE = new HashMap<>();
+    private static final CopyOnWriteArrayList<NotificationUpdateListener>
+            NOTIFICATION_LISTENERS = new CopyOnWriteArrayList<>();
+    private static volatile int unreadCount;
+    private static volatile MediaNotificationListenerService connectedService;
 
     public interface MediaUpdateListener {
         void onMediaNotificationsChanged();
+    }
+
+    /** Receives every change of the general (non-media) notification list. */
+    public interface NotificationUpdateListener {
+        void onNotificationsChanged();
     }
 
     public static ComponentName getComponentName(Context context) {
@@ -59,6 +76,121 @@ public class MediaNotificationListenerService extends NotificationListenerServic
         LISTENERS.remove(listener);
     }
 
+    public static void addNotificationUpdateListener(NotificationUpdateListener listener) {
+        if (listener != null && !NOTIFICATION_LISTENERS.contains(listener)) {
+            NOTIFICATION_LISTENERS.add(listener);
+        }
+    }
+
+    public static void removeNotificationUpdateListener(NotificationUpdateListener listener) {
+        NOTIFICATION_LISTENERS.remove(listener);
+    }
+
+    /** Every clearable notification currently on the status bar, newest first. */
+    public static List<NotificationSnapshot> getNotifications() {
+        synchronized (LOCK) {
+            return new ArrayList<>(NOTIFICATIONS);
+        }
+    }
+
+    public static int getUnreadCount() {
+        return unreadCount;
+    }
+
+    public static boolean isConnected() {
+        return connectedService != null;
+    }
+
+    /** Clears the unread badge: everything currently listed counts as seen. */
+    public static void markAllSeen() {
+        boolean changed;
+        synchronized (LOCK) {
+            changed = unreadCount > 0;
+            Set<String> activeKeys = new HashSet<>();
+            for (NotificationSnapshot snapshot : NOTIFICATIONS) {
+                activeKeys.add(snapshot.key);
+            }
+            SEEN_SIGNATURES.keySet().retainAll(activeKeys);
+            for (NotificationSnapshot snapshot : NOTIFICATIONS) {
+                SEEN_SIGNATURES.put(snapshot.key, snapshot.signature());
+            }
+            unreadCount = 0;
+        }
+        if (changed) {
+            notifyNotificationListeners();
+        }
+    }
+
+    public static void dismissNotification(String key) {
+        MediaNotificationListenerService service = connectedService;
+        if (service == null || TextUtils.isEmpty(key)) {
+            return;
+        }
+        try {
+            service.cancelNotification(key);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cancel notification failed: " + e.getClass().getSimpleName());
+        }
+    }
+
+    public static void dismissNotificationsForPackage(String packageName) {
+        MediaNotificationListenerService service = connectedService;
+        if (service == null || TextUtils.isEmpty(packageName)) {
+            return;
+        }
+        List<String> keys = new ArrayList<>();
+        synchronized (LOCK) {
+            for (NotificationSnapshot snapshot : NOTIFICATIONS) {
+                if (!snapshot.ongoing
+                        && TextUtils.equals(packageName, snapshot.packageName)) {
+                    keys.add(snapshot.key);
+                }
+            }
+        }
+        if (keys.isEmpty()) {
+            return;
+        }
+        try {
+            service.cancelNotifications(keys.toArray(new String[0]));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cancel package notifications failed: "
+                    + e.getClass().getSimpleName());
+        }
+    }
+
+    public static void dismissAllNotifications() {
+        MediaNotificationListenerService service = connectedService;
+        if (service == null) {
+            return;
+        }
+        try {
+            service.cancelAllNotifications();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cancel all notifications failed: " + e.getClass().getSimpleName());
+        }
+    }
+
+    /** True when the user granted this app notification-listener access. */
+    public static boolean isAccessGranted(Context context) {
+        if (context == null) {
+            return false;
+        }
+        String enabledListeners = android.provider.Settings.Secure.getString(
+                context.getContentResolver(), "enabled_notification_listeners");
+        ComponentName componentName = getComponentName(context);
+        return isComponentListed(enabledListeners, componentName.flattenToString())
+                || isComponentListed(enabledListeners,
+                        componentName.flattenToShortString());
+    }
+
+    private static boolean isComponentListed(String enabledListeners, String component) {
+        if (TextUtils.isEmpty(enabledListeners) || TextUtils.isEmpty(component)) {
+            return false;
+        }
+        String normalized = ":" + enabledListeners + ":";
+        return normalized.contains(":" + component + ":");
+    }
+
     public static List<MediaNotificationSnapshot> getSnapshots() {
         synchronized (LOCK) {
             return new ArrayList<>(SNAPSHOTS);
@@ -73,16 +205,34 @@ public class MediaNotificationListenerService extends NotificationListenerServic
 
     @Override
     public void onListenerConnected() {
+        connectedService = this;
         rebuildSnapshotsSafely();
     }
 
     @Override
+    public void onListenerDisconnected() {
+        if (connectedService == this) {
+            connectedService = null;
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        if (connectedService == this) {
+            connectedService = null;
+        }
+        super.onDestroy();
+    }
+
+    @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
+        connectedService = this;
         rebuildSnapshotsSafely();
     }
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
+        connectedService = this;
         rebuildSnapshotsSafely();
     }
 
@@ -97,6 +247,7 @@ public class MediaNotificationListenerService extends NotificationListenerServic
     private void rebuildSnapshots(StatusBarNotification[] activeNotifications) {
         List<MediaNotificationSnapshot> nextSnapshots = new ArrayList<>();
         List<TopComponentNotificationSnapshot> nextTopComponentSnapshots = new ArrayList<>();
+        List<NotificationSnapshot> nextNotifications = new ArrayList<>();
         if (activeNotifications != null) {
             for (StatusBarNotification sbn : activeNotifications) {
                 MediaNotificationSnapshot snapshot = createMediaSnapshot(sbn);
@@ -107,8 +258,18 @@ public class MediaNotificationListenerService extends NotificationListenerServic
                 if (topSnapshot != null) {
                     nextTopComponentSnapshots.add(topSnapshot);
                 }
+                NotificationSnapshot notificationSnapshot = createNotificationSnapshot(sbn);
+                if (notificationSnapshot != null) {
+                    nextNotifications.add(notificationSnapshot);
+                }
             }
         }
+        Collections.sort(nextNotifications, new Comparator<NotificationSnapshot>() {
+            @Override
+            public int compare(NotificationSnapshot left, NotificationSnapshot right) {
+                return Long.compare(right.postTime, left.postTime);
+            }
+        });
         Collections.sort(nextSnapshots, new Comparator<MediaNotificationSnapshot>() {
             @Override
             public int compare(MediaNotificationSnapshot left, MediaNotificationSnapshot right) {
@@ -137,14 +298,125 @@ public class MediaNotificationListenerService extends NotificationListenerServic
             SNAPSHOTS.addAll(nextSnapshots);
             TOP_COMPONENT_SNAPSHOTS.clear();
             TOP_COMPONENT_SNAPSHOTS.addAll(nextTopComponentSnapshots);
+            NOTIFICATIONS.clear();
+            NOTIFICATIONS.addAll(nextNotifications);
+            Set<String> activeKeys = new HashSet<>();
+            for (NotificationSnapshot snapshot : NOTIFICATIONS) {
+                activeKeys.add(snapshot.key);
+            }
+            SEEN_SIGNATURES.keySet().retainAll(activeKeys);
+            int nextUnread = 0;
+            for (NotificationSnapshot snapshot : NOTIFICATIONS) {
+                if (!snapshot.ongoing
+                        && !snapshot.signature().equals(SEEN_SIGNATURES.get(snapshot.key))) {
+                    nextUnread += snapshot.unreadWeight();
+                }
+            }
+            unreadCount = nextUnread;
         }
         notifyListeners();
+        notifyNotificationListeners();
+    }
+
+    private static void notifyNotificationListeners() {
+        for (NotificationUpdateListener listener : NOTIFICATION_LISTENERS) {
+            try {
+                listener.onNotificationsChanged();
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Notification listener failed: " + e.getClass().getSimpleName());
+            }
+        }
     }
 
     private void notifyListeners() {
         for (MediaUpdateListener listener : LISTENERS) {
             listener.onMediaNotificationsChanged();
         }
+    }
+
+    private NotificationSnapshot createNotificationSnapshot(StatusBarNotification sbn) {
+        if (sbn == null || TextUtils.equals(getPackageName(), sbn.getPackageName())) {
+            return null;
+        }
+        Notification notification = sbn.getNotification();
+        if (notification == null || notification.extras == null) {
+            return null;
+        }
+        int flags = notification.flags;
+        if ((flags & Notification.FLAG_GROUP_SUMMARY) != 0) {
+            return null;
+        }
+        // Ongoing / foreground-service notifications stay visible in the list (VPN,
+        // hotspot, casting services...), they just never count as unread messages and
+        // cannot be dismissed.
+        boolean ongoing = (flags & (Notification.FLAG_ONGOING_EVENT
+                | Notification.FLAG_FOREGROUND_SERVICE)) != 0 || !sbn.isClearable();
+        Bundle extras = notification.extras;
+        String title = firstNonEmpty(
+                text(extras.getCharSequence(Notification.EXTRA_TITLE)),
+                text(extras.getCharSequence(Notification.EXTRA_TITLE_BIG)),
+                text(extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)));
+        String body = firstNonEmpty(
+                text(extras.getCharSequence(Notification.EXTRA_TEXT)),
+                text(extras.getCharSequence(Notification.EXTRA_BIG_TEXT)),
+                text(extras.getCharSequence(Notification.EXTRA_SUB_TEXT)),
+                text(extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)));
+        if (TextUtils.isEmpty(title) && TextUtils.isEmpty(body)) {
+            return null;
+        }
+        String subText = text(extras.getCharSequence(Notification.EXTRA_SUB_TEXT));
+        return new NotificationSnapshot(
+                sbn.getKey(),
+                sbn.getPackageName(),
+                resolveAppLabel(sbn.getPackageName()),
+                title,
+                body,
+                subText,
+                sbn.getPostTime(),
+                countUnreadMessages(notification, extras),
+                ongoing);
+    }
+
+    /**
+     * Number of unread messages a notification represents. Messaging apps put the
+     * count in {@link Notification#number}; otherwise fall back to the messages /
+     * inbox lines the notification carries.
+     */
+    private int countUnreadMessages(Notification notification, Bundle extras) {
+        int count = Math.max(notification.number, 0);
+        if (count > 0) {
+            return count;
+        }
+        android.os.Parcelable[] messages =
+                extras.getParcelableArray(Notification.EXTRA_MESSAGES);
+        if (messages != null && messages.length > 0) {
+            return messages.length;
+        }
+        CharSequence[] lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
+        if (lines != null && lines.length > 0) {
+            return lines.length;
+        }
+        return 1;
+    }
+
+    private String resolveAppLabel(String packageName) {
+        synchronized (APP_LABEL_CACHE) {
+            String cached = APP_LABEL_CACHE.get(packageName);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        String label = packageName;
+        try {
+            PackageManager packageManager = getPackageManager();
+            label = String.valueOf(packageManager.getApplicationLabel(
+                    packageManager.getApplicationInfo(packageName, 0)));
+        } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
+        }
+        synchronized (APP_LABEL_CACHE) {
+            APP_LABEL_CACHE.put(packageName, label);
+        }
+        return label;
     }
 
     private MediaNotificationSnapshot createMediaSnapshot(StatusBarNotification sbn) {
@@ -583,6 +855,45 @@ public class MediaNotificationListenerService extends NotificationListenerServic
         long baseElapsedRealtime;
         boolean countDown;
         String displayedTime = "";
+    }
+
+    /** One clearable status-bar notification, grouped by package in the panel. */
+    public static final class NotificationSnapshot {
+        public final String key;
+        public final String packageName;
+        public final String appLabel;
+        public final String title;
+        public final String text;
+        public final String subText;
+        public final long postTime;
+        /** Unread messages represented by this notification, at least 1. */
+        public final int messageCount;
+        /** Ongoing service notification: shown in the list, but never unread. */
+        public final boolean ongoing;
+
+        private NotificationSnapshot(String key, String packageName, String appLabel,
+                                     String title, String text, String subText,
+                                     long postTime, int messageCount, boolean ongoing) {
+            this.key = key;
+            this.packageName = packageName;
+            this.appLabel = appLabel;
+            this.title = title;
+            this.text = text;
+            this.subText = subText;
+            this.postTime = postTime;
+            this.messageCount = Math.max(1, messageCount);
+            this.ongoing = ongoing;
+        }
+
+        /** How many messages this notification stands for in the unread badge. */
+        public int unreadWeight() {
+            return messageCount;
+        }
+
+        /** Changes when content changes, so an update counts as a new unread message. */
+        public String signature() {
+            return postTime + "|" + title + "|" + text + "|" + subText + "|" + messageCount;
+        }
     }
 
     public static final class MediaNotificationSnapshot {
