@@ -120,6 +120,9 @@ public final class FloatingBallController {
         void onOpenNotification(
                 MediaNotificationListenerService.NotificationSnapshot notification);
 
+        /** Moves the active app to the background and frees its slot. */
+        void onBackgroundApp();
+
         boolean hasNotificationAccess();
 
         void onRequestNotificationAccess();
@@ -194,6 +197,10 @@ public final class FloatingBallController {
     private boolean notificationHighlighted;
     private float notificationCenterX;
     private float notificationCenterY;
+    /** Screen-positioned 放入后台 control, above the kill control. */
+    private boolean backgroundActionHighlighted;
+    private float backgroundActionCenterX;
+    private float backgroundActionCenterY;
 
     private final MediaNotificationListenerService.NotificationUpdateListener
             notificationUpdateListener = this::onNotificationsChanged;
@@ -553,6 +560,7 @@ public final class FloatingBallController {
         killHighlighted = false;
         screenshotHighlighted = false;
         notificationHighlighted = false;
+        backgroundActionHighlighted = false;
         if (overlay != null) {
             setOverlayInteractive(false);
             overlay.setHighlight(-1);
@@ -560,6 +568,7 @@ public final class FloatingBallController {
             overlay.setKillHighlighted(false);
             overlay.setScreenshotHighlighted(false);
             overlay.setNotificationHighlighted(false);
+            overlay.setBackgroundActionHighlighted(false);
             overlay.playCollapse();
         }
         if (ball != null) {
@@ -601,6 +610,7 @@ public final class FloatingBallController {
             overlay.setKillHighlighted(false);
             overlay.setScreenshotHighlighted(false);
             overlay.setNotificationHighlighted(false);
+            overlay.setBackgroundActionHighlighted(false);
         }
         setSuppressed(true);
         if (overlay != null) {
@@ -911,6 +921,9 @@ public final class FloatingBallController {
                 } else if (notificationHighlighted) {
                     collapse();
                     showNotificationPanel();
+                } else if (backgroundActionHighlighted) {
+                    collapse();
+                    callbacks.onBackgroundApp();
                 } else if (highlightIndex >= 0) {
                     execute(highlightIndex);
                 } else {
@@ -1020,6 +1033,11 @@ public final class FloatingBallController {
         notificationCenterY = FloatingBallLayoutPolicy.notificationCenterY(
                 ringCenters[1], itemRadiusPx, screenMetrics().heightPixels);
         notificationHighlighted = false;
+        backgroundActionCenterX = FloatingBallLayoutPolicy.backgroundCenterX(
+                ringCenters[0], itemRadiusPx);
+        backgroundActionCenterY = FloatingBallLayoutPolicy.backgroundCenterY(
+                ringCenters[1], itemRadiusPx, screenMetrics().heightPixels);
+        backgroundActionHighlighted = false;
         overlay.setRing(items, layerLabel(), geometry[0], geometry[1], geometry[2],
                 itemRadiusPx);
         overlay.setHighlight(-1);
@@ -1110,7 +1128,9 @@ public final class FloatingBallController {
         boolean onKill = isKillHit(touchX, touchY);
         boolean onScreenshot = isScreenshotHit(touchX, touchY);
         boolean onNotification = isNotificationHit(touchX, touchY);
-        if ((onOcr || onKill || onScreenshot || onNotification) && index >= 0) {
+        boolean onBackgroundAction = isBackgroundActionHit(touchX, touchY);
+        if ((onOcr || onKill || onScreenshot || onNotification || onBackgroundAction)
+                && index >= 0) {
             // The satellites sit close to the ring near 12 o'clock; nearest wins.
             float ringDistance = distanceSquared(touchX, touchY,
                     ringCenters[index * 2], ringCenters[index * 2 + 1]);
@@ -1122,13 +1142,16 @@ public final class FloatingBallController {
                     screenshotCenterX, screenshotCenterY) < ringDistance;
             onNotification = onNotification && distanceSquared(touchX, touchY,
                     notificationCenterX, notificationCenterY) < ringDistance;
+            onBackgroundAction = onBackgroundAction && distanceSquared(touchX, touchY,
+                    backgroundActionCenterX, backgroundActionCenterY) < ringDistance;
         }
-        if (onOcr || onKill || onScreenshot || onNotification) {
+        if (onOcr || onKill || onScreenshot || onNotification || onBackgroundAction) {
             float bestDistance = Float.MAX_VALUE;
             boolean bestOcr = false;
             boolean bestKill = false;
             boolean bestScreenshot = false;
             boolean bestNotification = false;
+            boolean bestBackgroundAction = false;
             if (onOcr) {
                 bestDistance = distanceSquared(touchX, touchY, ocrCenterX, ocrCenterY);
                 bestOcr = true;
@@ -1152,28 +1175,44 @@ public final class FloatingBallController {
                     bestKill = false;
                     bestScreenshot = true;
                     bestNotification = false;
+                    bestBackgroundAction = false;
                 }
             }
             if (onNotification) {
                 float distance = distanceSquared(
                         touchX, touchY, notificationCenterX, notificationCenterY);
                 if (distance < bestDistance) {
+                    bestDistance = distance;
                     bestOcr = false;
                     bestKill = false;
                     bestScreenshot = false;
                     bestNotification = true;
+                    bestBackgroundAction = false;
+                }
+            }
+            if (onBackgroundAction) {
+                float distance = distanceSquared(touchX, touchY,
+                        backgroundActionCenterX, backgroundActionCenterY);
+                if (distance < bestDistance) {
+                    bestOcr = false;
+                    bestKill = false;
+                    bestScreenshot = false;
+                    bestNotification = false;
+                    bestBackgroundAction = true;
                 }
             }
             onOcr = bestOcr;
             onKill = bestKill;
             onScreenshot = bestScreenshot;
             onNotification = bestNotification;
+            onBackgroundAction = bestBackgroundAction;
             index = -1;
         }
         setOcrHighlighted(onOcr);
         setKillHighlighted(onKill);
         setScreenshotHighlighted(onScreenshot);
         setNotificationHighlighted(onNotification);
+        setBackgroundActionHighlighted(onBackgroundAction);
         setHighlight(index);
     }
 
@@ -1216,6 +1255,12 @@ public final class FloatingBallController {
         float threshold = itemRadiusPx + hitSlopPx;
         return distanceSquared(touchX, touchY, notificationCenterX, notificationCenterY)
                 <= threshold * threshold;
+    }
+
+    private boolean isBackgroundActionHit(float touchX, float touchY) {
+        float threshold = itemRadiusPx + hitSlopPx;
+        return distanceSquared(touchX, touchY, backgroundActionCenterX,
+                backgroundActionCenterY) <= threshold * threshold;
     }
 
     private void setOcrHighlighted(boolean highlighted) {
@@ -1273,6 +1318,22 @@ public final class FloatingBallController {
         notificationHighlighted = highlighted;
         if (overlay != null) {
             overlay.setNotificationHighlighted(highlighted);
+        }
+        if (highlighted) {
+            cancelDwell();
+            if (ball != null) {
+                ball.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            }
+        }
+    }
+
+    private void setBackgroundActionHighlighted(boolean highlighted) {
+        if (backgroundActionHighlighted == highlighted) {
+            return;
+        }
+        backgroundActionHighlighted = highlighted;
+        if (overlay != null) {
+            overlay.setBackgroundActionHighlighted(highlighted);
         }
         if (highlighted) {
             cancelDwell();
@@ -1385,6 +1446,9 @@ public final class FloatingBallController {
                 } else if (notificationHighlighted) {
                     collapse();
                     showNotificationPanel();
+                } else if (backgroundActionHighlighted) {
+                    collapse();
+                    callbacks.onBackgroundApp();
                 } else if (highlightIndex >= 0) {
                     execute(highlightIndex);
                 } else {

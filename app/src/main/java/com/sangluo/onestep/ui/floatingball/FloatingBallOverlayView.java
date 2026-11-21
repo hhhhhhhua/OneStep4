@@ -42,6 +42,8 @@ public final class FloatingBallOverlayView extends View {
     private static final int SCREENSHOT_BACKGROUND_DARK = 0xff2557d6;
     private static final int NOTIFICATION_BACKGROUND_LIGHT = 0xffe8a33d;
     private static final int NOTIFICATION_BACKGROUND_DARK = 0xffb57515;
+    private static final int BACKGROUND_ACTION_LIGHT = 0xff8b7cf6;
+    private static final int BACKGROUND_ACTION_DARK = 0xff5b49c9;
     private static final int ITEM_STROKE = 0x55ffffff;
     private static final int HIGHLIGHT_STROKE = 0xffffffff;
     private static final int ACTIVE_MAIN_STROKE = 0xff34c759;
@@ -66,6 +68,8 @@ public final class FloatingBallOverlayView extends View {
     private final Paint screenshotGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint notificationBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint notificationGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint backgroundActionBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint backgroundActionGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF labelRect = new RectF();
     private final RectF screenshotBodyRect = new RectF();
     private final Path bellPath = new Path();
@@ -81,6 +85,7 @@ public final class FloatingBallOverlayView extends View {
     private boolean killHighlighted;
     private boolean screenshotHighlighted;
     private boolean notificationHighlighted;
+    private boolean backgroundActionHighlighted;
     private float progress;
     private boolean interactive;
     private ValueAnimator animator;
@@ -136,6 +141,11 @@ public final class FloatingBallOverlayView extends View {
         notificationGlyphPaint.setStrokeWidth(dp(1.9f));
         notificationGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
         notificationGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
+        backgroundActionGlyphPaint.setStyle(Paint.Style.STROKE);
+        backgroundActionGlyphPaint.setColor(Color.WHITE);
+        backgroundActionGlyphPaint.setStrokeWidth(dp(1.9f));
+        backgroundActionGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
+        backgroundActionGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
     }
 
     public void setTouchListener(TouchListener listener) {
@@ -155,6 +165,7 @@ public final class FloatingBallOverlayView extends View {
         this.killHighlighted = false;
         this.screenshotHighlighted = false;
         this.notificationHighlighted = false;
+        this.backgroundActionHighlighted = false;
         invalidate();
     }
 
@@ -198,6 +209,14 @@ public final class FloatingBallOverlayView extends View {
         invalidate();
     }
 
+    public void setBackgroundActionHighlighted(boolean highlighted) {
+        if (backgroundActionHighlighted == highlighted) {
+            return;
+        }
+        backgroundActionHighlighted = highlighted;
+        invalidate();
+    }
+
     public void setInteractive(boolean interactive) {
         this.interactive = interactive;
         setClickable(interactive);
@@ -221,6 +240,7 @@ public final class FloatingBallOverlayView extends View {
                 killHighlighted = false;
                 screenshotHighlighted = false;
                 notificationHighlighted = false;
+                backgroundActionHighlighted = false;
                 invalidate();
             }
         });
@@ -286,6 +306,7 @@ public final class FloatingBallOverlayView extends View {
             drawKill(canvas, centers[0], centers[1]);
             drawScreenshot(canvas, centers[0], centers[1]);
             drawNotification(canvas, centers[0], centers[1]);
+            drawBackgroundAction(canvas, centers[0], centers[1]);
         }
         canvas.restoreToCount(layer);
 
@@ -407,6 +428,47 @@ public final class FloatingBallOverlayView extends View {
     }
 
     /**
+     * 放入后台 control: above the 杀死应用 control, on the left, in both layers, so it
+     * never takes a ring app slot.
+     */
+    private void drawBackgroundAction(Canvas canvas, float switchCx, float switchCy) {
+        float cx = FloatingBallLayoutPolicy.backgroundCenterX(switchCx, itemRadiusPx);
+        float cy = FloatingBallLayoutPolicy.backgroundCenterY(
+                switchCy, itemRadiusPx, getHeight());
+        float baseRadius = itemRadiusPx * 0.86f;
+        float drawRadius = backgroundActionHighlighted ? baseRadius * 1.12f : baseRadius;
+
+        backgroundActionBackgroundPaint.setShader(new LinearGradient(
+                cx - drawRadius, cy - drawRadius, cx + drawRadius, cy + drawRadius,
+                BACKGROUND_ACTION_LIGHT, BACKGROUND_ACTION_DARK, Shader.TileMode.CLAMP));
+        canvas.drawCircle(cx, cy, drawRadius, backgroundActionBackgroundPaint);
+        backgroundActionBackgroundPaint.setShader(null);
+        canvas.drawCircle(cx, cy, drawRadius, itemStrokePaint);
+        if (backgroundActionHighlighted) {
+            canvas.drawCircle(cx, cy, drawRadius + dp(3), highlightPaint);
+        }
+        drawBackgroundActionGlyph(canvas, cx, cy, drawRadius);
+    }
+
+    /** Tray with a downward arrow: minimize the app into the background. */
+    private void drawBackgroundActionGlyph(Canvas canvas, float cx, float cy, float radius) {
+        float halfWidth = radius * 0.42f;
+        float trayY = cy + radius * 0.32f;
+        canvas.drawLine(cx - halfWidth, trayY - radius * 0.20f,
+                cx - halfWidth, trayY, backgroundActionGlyphPaint);
+        canvas.drawLine(cx - halfWidth, trayY, cx + halfWidth, trayY,
+                backgroundActionGlyphPaint);
+        canvas.drawLine(cx + halfWidth, trayY, cx + halfWidth, trayY - radius * 0.20f,
+                backgroundActionGlyphPaint);
+        canvas.drawLine(cx, cy - radius * 0.46f, cx, cy + radius * 0.16f,
+                backgroundActionGlyphPaint);
+        canvas.drawLine(cx - radius * 0.20f, cy - radius * 0.06f,
+                cx, cy + radius * 0.16f, backgroundActionGlyphPaint);
+        canvas.drawLine(cx + radius * 0.20f, cy - radius * 0.06f,
+                cx, cy + radius * 0.16f, backgroundActionGlyphPaint);
+    }
+
+    /**
      * 通知 control: below the 识屏 control, on the right, in both layers, so it never
      * takes a ring app slot.
      */
@@ -496,6 +558,7 @@ public final class FloatingBallOverlayView extends View {
                 : killHighlighted ? "杀死应用"
                 : ocrHighlighted ? "识屏"
                 : notificationHighlighted ? "通知"
+                : backgroundActionHighlighted ? "放入后台"
                 : highlightedItem != null && !TextUtils.isEmpty(highlightedItem.label())
                         ? highlightedItem.label() : layerLabel;
         if (TextUtils.isEmpty(text)) {

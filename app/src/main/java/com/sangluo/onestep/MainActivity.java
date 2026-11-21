@@ -249,6 +249,8 @@ public class MainActivity extends Activity {
     private static final long WINDOW_SWITCH_IDLE_WARMUP_THRESHOLD_MS = 3000L;
     private static final int SIDE_DISMISS_DISTANCE_DP = 48;
     private static final int SIDE_DISMISS_SETTLE_MS = 180;
+    /** Extra settle time for HOME injection when backgrounding a slot app. */
+    private static final long BACKGROUND_HOME_SETTLE_MS = 260L;
     private static final int WINDOW_SCALE_APPEAR_MS = 240;
     private static final float WINDOW_SCALE_APPEAR_START = 0.82f;
     private static final int MAIN_APP_REPLACE_FADE_OUT_MS = 160;
@@ -8449,6 +8451,15 @@ public class MainActivity extends Activity {
     }
 
     private void dismissAppWindow(int slot, boolean allowMainPane, Runnable completion) {
+        dismissAppWindow(slot, allowMainPane, false, completion);
+    }
+
+    private void backgroundAppWindow(int slot, boolean allowMainPane, Runnable completion) {
+        dismissAppWindow(slot, allowMainPane, true, completion);
+    }
+
+    private void dismissAppWindow(int slot, boolean allowMainPane, boolean backgroundOnly,
+                                  Runnable completion) {
         if (slot < 0 || slot >= MAX_WINDOWS || (!allowMainPane && isMainPaneSlot(slot))
                 || (windowApps[slot] == null && !isInternalSettingsSlot(slot)
                 && !isDesktopHomeSlot(slot))
@@ -8489,7 +8500,7 @@ public class MainActivity extends Activity {
         }
         animator.start();
         closeDismissedSlot(slot, dismissedApp, dismissedHost, windowView,
-                dismissStartedUptime, allowMainPane, completion);
+                dismissStartedUptime, allowMainPane, backgroundOnly, completion);
     }
 
     private void dismissInternalSettingsSideWindow(int slot) {
@@ -8549,11 +8560,21 @@ public class MainActivity extends Activity {
     private void closeDismissedSlot(int slot, LauncherApp dismissedApp,
                                     EmbeddedAppHost dismissedHost, OneStepWindowView windowView,
                                     long dismissStartedUptime, boolean allowMainPane,
-                                    Runnable completion) {
+                                    boolean backgroundOnly, Runnable completion) {
         Runnable onClosed = () -> finishDismissedSlotAfterAnimation(slot, dismissedApp,
                 dismissedHost, windowView, dismissStartedUptime, allowMainPane, completion);
         if (dismissedHost == null) {
             onClosed.run();
+            return;
+        }
+        if (backgroundOnly) {
+            try {
+                dismissedHost.sendHome();
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Background app failed for slot " + slot + ": "
+                        + e.getClass().getSimpleName());
+            }
+            mainHandler.postDelayed(onClosed, BACKGROUND_HOME_SETTLE_MS);
             return;
         }
         try {
@@ -10073,6 +10094,11 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onBackgroundApp() {
+                backgroundFloatingBallTarget();
+            }
+
+            @Override
             public boolean hasNotificationAccess() {
                 return MediaNotificationListenerService.isAccessGranted(MainActivity.this);
             }
@@ -10116,6 +10142,46 @@ public class MainActivity extends Activity {
                 }
                 mainHandler.post(MainActivity.this::raiseFloatingBallAboveShields);
             }
+        });
+    }
+
+    /**
+     * Floating-ball 放入后台: send the active main app HOME so its task keeps running in
+     * the background, then clear the slot and refill the main pane like a normal exit.
+     */
+    private void backgroundFloatingBallTarget() {
+        if (activityDestroyed || exitOneStepPending || isWindowAnimationRunning()) {
+            return;
+        }
+        final int slot = activeMainSlot;
+        if (slot < 0 || slot >= MAX_WINDOWS) {
+            return;
+        }
+        if (isDisplayedMainDesktopSlot(slot) || isInternalSettingsSlot(slot)) {
+            Toast.makeText(this, "当前主屏没有可放入后台的应用", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        LauncherApp app = windowApps[slot];
+        if (app == null || app.isHomeEntry()) {
+            Toast.makeText(this, "当前主屏没有可放入后台的应用", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Log.i(TAG, "background app: slot=" + slot + " app=" + app.packageName);
+        backgroundAppWindow(slot, true, () -> {
+            if (activityDestroyed) {
+                return;
+            }
+            Toast.makeText(this, "已放入后台", Toast.LENGTH_SHORT).show();
+            if (activeMainSlot != slot) {
+                return;
+            }
+            int desktopSlot = findDesktopAppSlot();
+            if (desktopSlot >= 0 && desktopSlot != slot) {
+                mainSlotSwitchKeepSideEdge = true;
+                switchMainSlot(desktopSlot, true);
+                return;
+            }
+            ensureDesktopAfterKill(slot);
         });
     }
 
