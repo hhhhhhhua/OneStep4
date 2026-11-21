@@ -97,6 +97,19 @@
         </activity>
 
         <activity
+            android:name=".feature.screenshot.ScreenshotEditorActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:alwaysRetainTaskState="true"
+            android:canDisplayOnRemoteDevices="true"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.OneStep40.ScreenshotEditor"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="density|fontScale|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" />
+
+        <activity
             android:name=".HomeRedirectActivity"
             android:excludeFromRecents="true"
             android:exported="true"

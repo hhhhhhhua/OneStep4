@@ -37,6 +37,8 @@ public final class FloatingBallOverlayView extends View {
     private static final int SCREEN_OCR_BACKGROUND_DARK = 0xff1c7a70;
     private static final int KILL_BACKGROUND_LIGHT = 0xffff5f57;
     private static final int KILL_BACKGROUND_DARK = 0xffb3261e;
+    private static final int SCREENSHOT_BACKGROUND_LIGHT = 0xff5b9bff;
+    private static final int SCREENSHOT_BACKGROUND_DARK = 0xff2557d6;
     private static final int ITEM_STROKE = 0x55ffffff;
     private static final int HIGHLIGHT_STROKE = 0xffffffff;
     private static final int ACTIVE_MAIN_STROKE = 0xff34c759;
@@ -57,7 +59,10 @@ public final class FloatingBallOverlayView extends View {
     private final Paint ocrGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint killBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint killGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint screenshotBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint screenshotGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF labelRect = new RectF();
+    private final RectF screenshotBodyRect = new RectF();
 
     private List<FloatingBallItem> items = Collections.emptyList();
     private String layerLabel = "";
@@ -68,6 +73,7 @@ public final class FloatingBallOverlayView extends View {
     private int highlighted = -1;
     private boolean ocrHighlighted;
     private boolean killHighlighted;
+    private boolean screenshotHighlighted;
     private float progress;
     private boolean interactive;
     private ValueAnimator animator;
@@ -113,6 +119,11 @@ public final class FloatingBallOverlayView extends View {
         killGlyphPaint.setStrokeWidth(dp(2.2f));
         killGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
         killGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
+        screenshotGlyphPaint.setStyle(Paint.Style.STROKE);
+        screenshotGlyphPaint.setColor(Color.WHITE);
+        screenshotGlyphPaint.setStrokeWidth(dp(1.8f));
+        screenshotGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
+        screenshotGlyphPaint.setStrokeJoin(Paint.Join.ROUND);
     }
 
     public void setTouchListener(TouchListener listener) {
@@ -130,6 +141,7 @@ public final class FloatingBallOverlayView extends View {
         this.highlighted = -1;
         this.ocrHighlighted = false;
         this.killHighlighted = false;
+        this.screenshotHighlighted = false;
         invalidate();
     }
 
@@ -157,6 +169,14 @@ public final class FloatingBallOverlayView extends View {
         invalidate();
     }
 
+    public void setScreenshotHighlighted(boolean highlighted) {
+        if (screenshotHighlighted == highlighted) {
+            return;
+        }
+        screenshotHighlighted = highlighted;
+        invalidate();
+    }
+
     public void setInteractive(boolean interactive) {
         this.interactive = interactive;
         setClickable(interactive);
@@ -178,6 +198,7 @@ public final class FloatingBallOverlayView extends View {
                 highlighted = -1;
                 ocrHighlighted = false;
                 killHighlighted = false;
+                screenshotHighlighted = false;
                 invalidate();
             }
         });
@@ -241,6 +262,7 @@ public final class FloatingBallOverlayView extends View {
         if (centers.length >= 2) {
             drawScreenOcr(canvas, centers[0], centers[1]);
             drawKill(canvas, centers[0], centers[1]);
+            drawScreenshot(canvas, centers[0], centers[1]);
         }
         canvas.restoreToCount(layer);
 
@@ -337,6 +359,44 @@ public final class FloatingBallOverlayView extends View {
         drawKillGlyph(canvas, cx, cy, drawRadius);
     }
 
+    /**
+     * 截图 control: diagonally above the 识屏 control, in both layers, so it never takes a
+     * ring app slot.
+     */
+    private void drawScreenshot(Canvas canvas, float switchCx, float switchCy) {
+        float cx = FloatingBallLayoutPolicy.screenshotCenterX(switchCx, itemRadiusPx);
+        float cy = FloatingBallLayoutPolicy.screenshotCenterY(
+                switchCy, itemRadiusPx, getHeight());
+        float baseRadius = itemRadiusPx * 0.86f;
+        float drawRadius = screenshotHighlighted ? baseRadius * 1.12f : baseRadius;
+
+        screenshotBackgroundPaint.setShader(new LinearGradient(
+                cx - drawRadius, cy - drawRadius, cx + drawRadius, cy + drawRadius,
+                SCREENSHOT_BACKGROUND_LIGHT, SCREENSHOT_BACKGROUND_DARK,
+                Shader.TileMode.CLAMP));
+        canvas.drawCircle(cx, cy, drawRadius, screenshotBackgroundPaint);
+        screenshotBackgroundPaint.setShader(null);
+        canvas.drawCircle(cx, cy, drawRadius, itemStrokePaint);
+        if (screenshotHighlighted) {
+            canvas.drawCircle(cx, cy, drawRadius + dp(3), highlightPaint);
+        }
+        drawScreenshotGlyph(canvas, cx, cy, drawRadius);
+    }
+
+    /** Camera glyph: rounded body, top bump and a lens. */
+    private void drawScreenshotGlyph(Canvas canvas, float cx, float cy, float radius) {
+        float halfWidth = radius * 0.46f;
+        float halfHeight = radius * 0.34f;
+        screenshotBodyRect.set(cx - halfWidth, cy - halfHeight,
+                cx + halfWidth, cy + halfHeight);
+        canvas.drawRoundRect(screenshotBodyRect, radius * 0.16f, radius * 0.16f,
+                screenshotGlyphPaint);
+        canvas.drawRoundRect(cx - radius * 0.18f, cy - radius * 0.52f,
+                cx + radius * 0.18f, cy - radius * 0.28f,
+                radius * 0.08f, radius * 0.08f, screenshotGlyphPaint);
+        canvas.drawCircle(cx, cy, radius * 0.21f, screenshotGlyphPaint);
+    }
+
     /** Cross glyph: kill/close. */
     private void drawKillGlyph(Canvas canvas, float cx, float cy, float radius) {
         float half = radius * 0.40f;
@@ -367,7 +427,8 @@ public final class FloatingBallOverlayView extends View {
     private void drawCaption(Canvas canvas, float alpha) {
         FloatingBallItem highlightedItem = highlighted >= 0 && highlighted < items.size()
                 ? items.get(highlighted) : null;
-        String text = killHighlighted ? "杀死应用"
+        String text = screenshotHighlighted ? "截图"
+                : killHighlighted ? "杀死应用"
                 : ocrHighlighted ? "识屏"
                 : highlightedItem != null && !TextUtils.isEmpty(highlightedItem.label())
                         ? highlightedItem.label() : layerLabel;

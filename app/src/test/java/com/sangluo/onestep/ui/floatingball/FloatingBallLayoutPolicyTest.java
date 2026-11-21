@@ -53,6 +53,33 @@ public class FloatingBallLayoutPolicyTest {
     }
 
     @Test
+    public void screenshotControlSitsAboveTheScreenRecognitionControl() {
+        float switchCenterX = 200f;
+        float switchCenterY = 300f;
+        float itemRadius = 20f;
+
+        assertEquals(switchCenterX + itemRadius
+                        * FloatingBallLayoutPolicy.SCREENSHOT_OFFSET_ITEM_RADII,
+                FloatingBallLayoutPolicy.screenshotCenterX(
+                        switchCenterX, itemRadius), DELTA);
+        assertEquals(switchCenterY - itemRadius
+                        * FloatingBallLayoutPolicy.SCREENSHOT_OFFSET_ITEM_RADII,
+                FloatingBallLayoutPolicy.screenshotCenterY(
+                        switchCenterY, itemRadius, 800f), DELTA);
+    }
+
+    @Test
+    public void screenshotControlStaysInsideTheScreen() {
+        float itemRadius = 20f;
+        float edge = itemRadius * FloatingBallLayoutPolicy.SATELLITE_EDGE_ITEM_RADII;
+
+        assertEquals(edge, FloatingBallLayoutPolicy.screenshotCenterY(
+                0f, itemRadius, 800f), DELTA);
+        assertEquals(800f - edge, FloatingBallLayoutPolicy.screenshotCenterY(
+                900f, itemRadius, 800f), DELTA);
+    }
+
+    @Test
     public void hitTestReturnsNearestSlotInsideTheHitArea() {
         float[] centers = FloatingBallLayoutPolicy.computeCenters(100f, 100f, 100f, 4);
 

@@ -20,6 +20,10 @@ public final class FloatingBallLayoutPolicy {
     public static final float OCR_OFFSET_ITEM_RADII = 2.15f;
     /** Distance of the 杀死应用 control from the switch centre, in item radii. */
     public static final float KILL_OFFSET_ITEM_RADII = 2.15f;
+    /** Distance of the 截图 control from the switch centre, in item radii. */
+    public static final float SCREENSHOT_OFFSET_ITEM_RADII = 2.15f;
+    /** Minimum distance a satellite keeps from the screen edge, in item radii. */
+    public static final float SATELLITE_EDGE_ITEM_RADII = 1.15f;
 
     private FloatingBallLayoutPolicy() {
     }
@@ -86,6 +90,23 @@ public final class FloatingBallLayoutPolicy {
      */
     public static float killCenterX(float switchCenterX, float itemRadiusPx) {
         return switchCenterX - itemRadiusPx * KILL_OFFSET_ITEM_RADII;
+    }
+
+    public static float screenshotCenterX(float switchCenterX, float itemRadiusPx) {
+        return switchCenterX + itemRadiusPx * SCREENSHOT_OFFSET_ITEM_RADII;
+    }
+
+    /**
+     * Vertical centre of the 截图 control: above the 识屏 control, mirrored diagonally.
+     * Clamped to the screen so the satellite never leaves the visible area when the ball
+     * is dragged to the top edge.
+     */
+    public static float screenshotCenterY(float switchCenterY, float itemRadiusPx,
+                                          float heightPx) {
+        float edge = itemRadiusPx * SATELLITE_EDGE_ITEM_RADII;
+        float maxY = Math.max(edge, heightPx - edge);
+        float target = switchCenterY - itemRadiusPx * SCREENSHOT_OFFSET_ITEM_RADII;
+        return Math.max(edge, Math.min(maxY, target));
     }
 
     /**

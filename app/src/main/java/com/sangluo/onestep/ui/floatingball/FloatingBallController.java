@@ -23,6 +23,7 @@ import android.view.animation.DecelerateInterpolator;
 
 import com.sangluo.onestep.data.settings.OneStepSettings;
 import com.sangluo.onestep.model.LauncherApp;
+import com.sangluo.onestep.utils.DeviceUtil;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -107,6 +108,9 @@ public final class FloatingBallController {
         /** Kills the app covering OneStep's display, or the active main-slot app. */
         void onKillApp();
 
+        /** Captures the display and opens the screenshot editor. */
+        void onScreenshot();
+
         void onExpandedChanged(boolean expanded);
 
         float[] savedPosition();
@@ -166,6 +170,10 @@ public final class FloatingBallController {
     private boolean killHighlighted;
     private float killCenterX;
     private float killCenterY;
+    /** Screen-positioned screenshot control, above the screen-recognition control. */
+    private boolean screenshotHighlighted;
+    private float screenshotCenterX;
+    private float screenshotCenterY;
 
     private float positionYRatio = DEFAULT_Y_RATIO;
     private boolean dockedRight = true;
@@ -502,11 +510,13 @@ public final class FloatingBallController {
         highlightIndex = -1;
         ocrHighlighted = false;
         killHighlighted = false;
+        screenshotHighlighted = false;
         if (overlay != null) {
             setOverlayInteractive(false);
             overlay.setHighlight(-1);
             overlay.setOcrHighlighted(false);
             overlay.setKillHighlighted(false);
+            overlay.setScreenshotHighlighted(false);
             overlay.playCollapse();
         }
         if (ball != null) {
@@ -519,6 +529,51 @@ public final class FloatingBallController {
             callbacks.onExpandedChanged(false);
         }
         scheduleAutoDock();
+    }
+
+    /**
+     * Hides the ball and ring immediately so neither is composed into a screenshot. The
+     * caller must invoke {@link #restoreAfterScreenshot()} when editing finishes.
+     */
+    public void hideForScreenshot() {
+        if (!attached) {
+            return;
+        }
+        boolean wasExpanded = isExpanded();
+        cancelLongPress();
+        cancelDwell();
+        cancelLockTimeout();
+        cancelAutoDock();
+        cancelDockAnimation();
+        state = State.IDLE;
+        highlightIndex = -1;
+        ocrHighlighted = false;
+        killHighlighted = false;
+        screenshotHighlighted = false;
+        if (overlay != null) {
+            setOverlayInteractive(false);
+            overlay.setHighlight(-1);
+            overlay.setOcrHighlighted(false);
+            overlay.setKillHighlighted(false);
+            overlay.setScreenshotHighlighted(false);
+        }
+        setSuppressed(true);
+        if (overlay != null) {
+            overlay.setVisibility(View.GONE);
+        }
+        removeOverlayWindow();
+        removeBallWindow();
+        if (wasExpanded) {
+            callbacks.onExpandedChanged(false);
+        }
+    }
+
+    /** Re-attaches the ball after the screenshot editor closes. */
+    public void restoreAfterScreenshot() {
+        if (!attached) {
+            return;
+        }
+        setSuppressed(false);
     }
 
     // ---------------------------------------------------------------- gestures
@@ -628,7 +683,10 @@ public final class FloatingBallController {
                     break;
                 }
                 updateHighlightAt(rawX, rawY);
-                if (killHighlighted) {
+                if (screenshotHighlighted) {
+                    collapse();
+                    callbacks.onScreenshot();
+                } else if (killHighlighted) {
                     collapse();
                     callbacks.onKillApp();
                 } else if (ocrHighlighted) {
@@ -680,6 +738,7 @@ public final class FloatingBallController {
     }
 
     private void expand(boolean locked) {
+        DeviceUtil.ensureLocalImePolicy(0);
         if (isExpanded() || overlay == null) {
             return;
         }
@@ -732,6 +791,11 @@ public final class FloatingBallController {
         killCenterX = FloatingBallLayoutPolicy.killCenterX(ringCenters[0], itemRadiusPx);
         killCenterY = ringCenters[1];
         killHighlighted = false;
+        screenshotCenterX = FloatingBallLayoutPolicy.screenshotCenterX(
+                ringCenters[0], itemRadiusPx);
+        screenshotCenterY = FloatingBallLayoutPolicy.screenshotCenterY(
+                ringCenters[1], itemRadiusPx, screenMetrics().heightPixels);
+        screenshotHighlighted = false;
         overlay.setRing(items, layerLabel(), geometry[0], geometry[1], geometry[2],
                 itemRadiusPx);
         overlay.setHighlight(-1);
@@ -820,26 +884,53 @@ public final class FloatingBallController {
                 touchX, touchY, itemRadiusPx, hitSlopPx);
         boolean onOcr = isOcrHit(touchX, touchY);
         boolean onKill = isKillHit(touchX, touchY);
-        if ((onOcr || onKill) && index >= 0) {
-            // All three controls sit close together near 12 o'clock; nearest wins.
+        boolean onScreenshot = isScreenshotHit(touchX, touchY);
+        if ((onOcr || onKill || onScreenshot) && index >= 0) {
+            // The satellites sit close to the ring near 12 o'clock; nearest wins.
             float ringDistance = distanceSquared(touchX, touchY,
                     ringCenters[index * 2], ringCenters[index * 2 + 1]);
             onOcr = onOcr && distanceSquared(touchX, touchY,
                     ocrCenterX, ocrCenterY) < ringDistance;
             onKill = onKill && distanceSquared(touchX, touchY,
                     killCenterX, killCenterY) < ringDistance;
+            onScreenshot = onScreenshot && distanceSquared(touchX, touchY,
+                    screenshotCenterX, screenshotCenterY) < ringDistance;
         }
-        if (onOcr && onKill) {
-            boolean ocrCloser = distanceSquared(touchX, touchY, ocrCenterX, ocrCenterY)
-                    < distanceSquared(touchX, touchY, killCenterX, killCenterY);
-            onOcr = ocrCloser;
-            onKill = !ocrCloser;
-        }
-        if (onOcr || onKill) {
+        if (onOcr || onKill || onScreenshot) {
+            float bestDistance = Float.MAX_VALUE;
+            boolean bestOcr = false;
+            boolean bestKill = false;
+            boolean bestScreenshot = false;
+            if (onOcr) {
+                bestDistance = distanceSquared(touchX, touchY, ocrCenterX, ocrCenterY);
+                bestOcr = true;
+            }
+            if (onKill) {
+                float distance = distanceSquared(touchX, touchY, killCenterX, killCenterY);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestOcr = false;
+                    bestKill = true;
+                    bestScreenshot = false;
+                }
+            }
+            if (onScreenshot) {
+                float distance = distanceSquared(
+                        touchX, touchY, screenshotCenterX, screenshotCenterY);
+                if (distance < bestDistance) {
+                    bestOcr = false;
+                    bestKill = false;
+                    bestScreenshot = true;
+                }
+            }
+            onOcr = bestOcr;
+            onKill = bestKill;
+            onScreenshot = bestScreenshot;
             index = -1;
         }
         setOcrHighlighted(onOcr);
         setKillHighlighted(onKill);
+        setScreenshotHighlighted(onScreenshot);
         setHighlight(index);
     }
 
@@ -872,6 +963,12 @@ public final class FloatingBallController {
                 <= threshold * threshold;
     }
 
+    private boolean isScreenshotHit(float touchX, float touchY) {
+        float threshold = itemRadiusPx + hitSlopPx;
+        return distanceSquared(touchX, touchY, screenshotCenterX, screenshotCenterY)
+                <= threshold * threshold;
+    }
+
     private void setOcrHighlighted(boolean highlighted) {
         if (ocrHighlighted == highlighted) {
             return;
@@ -895,6 +992,22 @@ public final class FloatingBallController {
         killHighlighted = highlighted;
         if (overlay != null) {
             overlay.setKillHighlighted(highlighted);
+        }
+        if (highlighted) {
+            cancelDwell();
+            if (ball != null) {
+                ball.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            }
+        }
+    }
+
+    private void setScreenshotHighlighted(boolean highlighted) {
+        if (screenshotHighlighted == highlighted) {
+            return;
+        }
+        screenshotHighlighted = highlighted;
+        if (overlay != null) {
+            overlay.setScreenshotHighlighted(highlighted);
         }
         if (highlighted) {
             cancelDwell();
@@ -995,7 +1108,10 @@ public final class FloatingBallController {
                 lastRawX = rawX;
                 lastRawY = rawY;
                 updateHighlightAt(rawX, rawY);
-                if (killHighlighted) {
+                if (screenshotHighlighted) {
+                    collapse();
+                    callbacks.onScreenshot();
+                } else if (killHighlighted) {
                     collapse();
                     callbacks.onKillApp();
                 } else if (ocrHighlighted) {

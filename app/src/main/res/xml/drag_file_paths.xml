@@ -3,4 +3,7 @@
     <cache-path
         name="drag_images"
         path="drag/" />
+    <cache-path
+        name="screenshots"
+        path="screenshots/" />
 </paths>

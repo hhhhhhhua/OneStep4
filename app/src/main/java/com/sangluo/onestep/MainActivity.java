@@ -24,6 +24,7 @@ import android.content.pm.ResolveInfo;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
@@ -100,6 +101,8 @@ import com.sangluo.onestep.feature.drag.ImageDragSourcePolicy;
 import com.sangluo.onestep.feature.drag.ImageFileNamePolicy;
 import com.sangluo.onestep.feature.drag.ImageShareTargetPolicy;
 import com.sangluo.onestep.feature.logging.SessionLogRecorder;
+import com.sangluo.onestep.feature.screenshot.ScreenshotCaptureClient;
+import com.sangluo.onestep.feature.screenshot.ScreenshotEditorActivity;
 import com.sangluo.onestep.feature.tasks.RunningTaskAppResolver;
 import com.sangluo.onestep.frida.FridaBridge;
 import com.sangluo.onestep.model.LauncherApp;
@@ -232,6 +235,8 @@ public class MainActivity extends Activity {
     private static final int MEDIA_ROOT_COMMAND_TIMEOUT_SECONDS = 8;
     private static final String TASK_STACK_LIST_COMMAND =
             "cmd activity stack list 2>/dev/null || am stack list";
+    private static final long SCREENSHOT_SETTLE_DELAY_MS = 48L;
+    private static final long SCREENSHOT_EDITOR_LAUNCH_TIMEOUT_MS = 8000L;
     private static final String[] KERNEL_SU_MANAGER_PACKAGES = {
             "me.weishu.kernelsu",
             "com.rifsxd.ksunext"
@@ -311,6 +316,7 @@ public class MainActivity extends Activity {
     private boolean floatingBallDockingEnabled = true;
     private int floatingBallOpacity = 100;
     private FloatingBallController floatingBallController;
+    private boolean screenshotEditorOpen;
     private List<LauncherApp> builtInDesktopApps = Collections.emptyList();
     private LauncherApp builtInDesktopApp;
     private boolean builtInDesktopResolutionFresh;
@@ -10044,6 +10050,11 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onScreenshot() {
+                startScreenshotCapture();
+            }
+
+            @Override
             public void onExpandedChanged(boolean expanded) {
                 // The expanded ring must sit above the side-slot input shields, otherwise
                 // taps on the ring would be swallowed by the shield windows.
@@ -10138,6 +10149,67 @@ public class MainActivity extends Activity {
         }
         int slash = component.indexOf('/');
         return slash > 0 ? component.substring(0, slash) : "";
+    }
+
+    private void startScreenshotCapture() {
+        if (activityDestroyed || screenshotEditorOpen) {
+            return;
+        }
+        final int displayId = getActivityDisplayId();
+        if (floatingBallController != null) {
+            floatingBallController.hideForScreenshot();
+        }
+        final Runnable capture = () -> {
+            if (activityDestroyed) {
+                restoreFloatingBallAfterScreenshot();
+                return;
+            }
+            mediaRootExecutor.execute(() -> {
+                Bitmap bitmap = ScreenshotCaptureClient.capture(
+                        this, displayId, persistentRootShell::run);
+                mainHandler.post(() -> finishScreenshotCapture(bitmap, displayId));
+            });
+        };
+        // Two frames let the ball and ring disappear from the composition.
+        View decor = getWindow().getDecorView();
+        decor.postOnAnimation(() -> decor.postOnAnimation(
+                () -> decor.postDelayed(capture, SCREENSHOT_SETTLE_DELAY_MS)));
+    }
+
+    private void finishScreenshotCapture(Bitmap bitmap, int displayId) {
+        if (activityDestroyed) {
+            if (bitmap != null) {
+                bitmap.recycle();
+            }
+            restoreFloatingBallAfterScreenshot();
+            return;
+        }
+        if (bitmap == null) {
+            Toast.makeText(this, "截图失败，请重试", Toast.LENGTH_SHORT).show();
+            restoreFloatingBallAfterScreenshot();
+            return;
+        }
+        screenshotEditorOpen = true;
+        final long requestUptime = ScreenshotEditorActivity.start(this, bitmap, displayId, () -> {
+            screenshotEditorOpen = false;
+            restoreFloatingBallAfterScreenshot();
+        }, persistentRootShell::run);
+        mainHandler.postDelayed(() -> {
+            if (!screenshotEditorOpen
+                    || ScreenshotEditorActivity.wasCreatedSince(requestUptime)) {
+                return;
+            }
+            screenshotEditorOpen = false;
+            ScreenshotEditorActivity.cancelPending();
+            Toast.makeText(this, "无法显示截图编辑器", Toast.LENGTH_SHORT).show();
+            restoreFloatingBallAfterScreenshot();
+        }, SCREENSHOT_EDITOR_LAUNCH_TIMEOUT_MS);
+    }
+
+    private void restoreFloatingBallAfterScreenshot() {
+        if (!activityDestroyed && floatingBallController != null) {
+            floatingBallController.restoreAfterScreenshot();
+        }
     }
 
     private LauncherApp currentMainApp() {

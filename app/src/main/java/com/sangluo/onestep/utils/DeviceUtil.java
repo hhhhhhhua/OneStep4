@@ -3,6 +3,9 @@ package com.sangluo.onestep.utils;
 import static android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC;
 import static android.view.InputDevice.KEYBOARD_TYPE_NON_ALPHABETIC;
 
+import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.hardware.input.IInputManager;
 import android.hardware.input.InputManager;
 import android.os.Binder;
@@ -12,6 +15,8 @@ import android.util.Log;
 import android.view.Display;
 import android.view.InputDevice;
 import android.view.KeyEvent;
+
+import com.sangluo.onestep.IRootInputBridgeService;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -29,6 +34,8 @@ import rikka.shizuku.SystemServiceHelper;
 public class DeviceUtil {
 
     private static final String TAG = "OneStep40";
+    /** WindowManager display IME policy that hosts the IME on this display. */
+    private static final int DISPLAY_IME_POLICY_LOCAL = 0;
 
     public static void bindDeviceToVirtualDisplay(IInputManager inputManager, int type , int displayId){
         List<InputDevice> keyboradDevices = getKeyboradDevices(inputManager);
@@ -62,6 +69,45 @@ public class DeviceUtil {
                 Log.d(TAG, "绑定设备：" + inputDevice + "到displayid: " + displayId + "失败");
                 throw new RuntimeException(e);
             }
+        }
+    }
+
+    /**
+     * The extended display defaults to the fallback IME policy, which draws the keyboard on
+     * the phone (display 0). Switch it to local so text input appears on this display.
+     */
+    public static void ensureLocalImePolicy(int displayId) {
+        new Thread(() -> {
+            try {
+                IRootInputBridgeService service =
+                        ShizukuServiceUtil.getRootInputBridgeService();
+                if (service == null) {
+                    ShizukuServiceUtil.waitServiceInitOver();
+                    service = ShizukuServiceUtil.getRootInputBridgeService();
+                }
+                if (service == null) {
+                    Log.w(TAG, "IME policy bridge unavailable for display " + displayId);
+                    return;
+                }
+                String response = service.handleCommand(bridgeToken(),
+                        "imePolicy " + displayId + " " + DISPLAY_IME_POLICY_LOCAL);
+                Log.i(TAG, "Display IME policy display=" + displayId
+                        + " response=" + response);
+            } catch (RemoteException | RuntimeException error) {
+                Log.w(TAG, "Cannot apply local IME policy for display " + displayId, error);
+            }
+        }, "onestep-screenshot-ime-policy").start();
+    }
+
+
+    private static String bridgeToken() {
+        try {
+            Context anyContext = AweSomeUtil.getAnyContext();
+            PackageInfo info = anyContext.getPackageManager().getPackageInfo(anyContext.getPackageName(), 0);
+            return info.getLongVersionCode() + ":" + info.lastUpdateTime + ":"
+                    + anyContext.getApplicationInfo().sourceDir;
+        } catch (PackageManager.NameNotFoundException | RuntimeException error) {
+            return "unknown";
         }
     }
 
