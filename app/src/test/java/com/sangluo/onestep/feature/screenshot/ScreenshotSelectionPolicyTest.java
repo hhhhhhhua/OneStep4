@@ -26,6 +26,24 @@ public class ScreenshotSelectionPolicyTest {
     }
 
     @Test
+    public void fullScreenCoversTheWholeDisplay() {
+        assertArrayEquals(new float[]{0f, 0f, 600f, 800f},
+                ScreenshotSelectionPolicy.fullScreen(600f, 800f), DELTA);
+    }
+
+    @Test
+    public void clampToScreenTrimsEdgesAndRejectsTinyRects() {
+        assertArrayEquals(new float[]{0f, 20f, 300f, 800f},
+                ScreenshotSelectionPolicy.clampToScreen(
+                        new float[]{-10f, 20f, 300f, 900f}, 600f, 800f, 16f), DELTA);
+        assertArrayEquals(new float[]{100f, 200f, 300f, 500f},
+                ScreenshotSelectionPolicy.clampToScreen(
+                        new float[]{300f, 500f, 100f, 200f}, 600f, 800f, 16f), DELTA);
+        assertEquals(null, ScreenshotSelectionPolicy.clampToScreen(
+                new float[]{0f, 0f, 10f, 10f}, 600f, 800f, 16f));
+    }
+
+    @Test
     public void moveKeepsSizeAndStaysOnScreen() {
         float[] moved = ScreenshotSelectionPolicy.move(
                 new float[]{100f, 100f, 300f, 300f}, 50f, -50f, 1000f, 1000f);

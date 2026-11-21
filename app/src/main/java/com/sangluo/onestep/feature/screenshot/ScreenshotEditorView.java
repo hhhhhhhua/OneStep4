@@ -62,6 +62,14 @@ public final class ScreenshotEditorView extends View {
     private static final float HANDLE_HIT_DP = 20f;
     private static final float HANDLE_RADIUS_DP = 5f;
     private static final float TEXT_SIZE_SP = 18f;
+    private static final float MODE_CHIP_WIDTH_DP = 64f;
+    private static final float MODE_CHIP_HEIGHT_DP = 32f;
+    private static final float MODE_CHIP_GAP_DP = 6f;
+    private static final float MODE_SELECTION_GAP_DP = 10f;
+    private static final float MODE_EDGE_DP = 8f;
+    private static final int MODE_BAR_BACKGROUND = 0xcc1f2328;
+    private static final int MODE_ACTIVE_BACKGROUND = 0xff4f8cff;
+    private static final int MODE_INACTIVE_TEXT = 0xccffffff;
 
     private static final float[] DOODLE_WIDTH_DP = {2f, 4f, 7f};
     private static final float[] MOSAIC_BLOCK_DP = {8f, 12f, 18f};
@@ -77,7 +85,11 @@ public final class ScreenshotEditorView extends View {
     private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint chipPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint statusPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint modeBarPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint modeChipPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint modeLabelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF drawingRect = new RectF();
+    private final RectF modeBarRect = new RectF();
     private final Path glyphPath = new Path();
 
     private Bitmap source;
@@ -89,6 +101,7 @@ public final class ScreenshotEditorView extends View {
     private float[] toolbarBounds = new float[4];
     private final float[][] itemBounds = new float[6][4];
     private final float[][] chipBounds = new float[3][4];
+    private final float[][] modeChipBounds = new float[3][4];
     private final RectF closeBounds = new RectF();
 
     private Tool tool = Tool.NONE;
@@ -96,6 +109,9 @@ public final class ScreenshotEditorView extends View {
     private int mosaicWidthIndex = 1;
     private boolean exporting;
     private boolean inputBlocked;
+    private ScreenshotCaptureMode captureMode = ScreenshotCaptureMode.FULL_SCREEN;
+    private float[] mainSlotBounds;
+    private int pressedMode = -1;
 
     private int dragMode = DRAG_NONE;
     private int laidOutItemCount = -1;
@@ -144,6 +160,13 @@ public final class ScreenshotEditorView extends View {
         statusPaint.setTextAlign(Paint.Align.CENTER);
         statusPaint.setTextSize(sp(13));
         statusPaint.setTypeface(Typeface.DEFAULT_BOLD);
+        modeBarPaint.setStyle(Paint.Style.FILL);
+        modeBarPaint.setColor(MODE_BAR_BACKGROUND);
+        modeChipPaint.setStyle(Paint.Style.FILL);
+        modeLabelPaint.setColor(MODE_INACTIVE_TEXT);
+        modeLabelPaint.setTextAlign(Paint.Align.CENTER);
+        modeLabelPaint.setTextSize(sp(12));
+        modeLabelPaint.setTypeface(Typeface.DEFAULT_BOLD);
         setContentDescription("截图编辑");
     }
 
@@ -168,6 +191,19 @@ public final class ScreenshotEditorView extends View {
 
     public float getDisplayScale() {
         return displayScale;
+    }
+
+    /**
+     * Bounds of the active main slot in view pixels, used by the 主slot capture mode.
+     * {@code null} when the host could not resolve a pane.
+     */
+    public void setMainSlotBounds(float[] bounds) {
+        mainSlotBounds = bounds == null || bounds.length < 4 ? null : bounds.clone();
+        invalidate();
+    }
+
+    public ScreenshotCaptureMode getCaptureMode() {
+        return captureMode;
     }
 
     public void setExporting(boolean exporting) {
@@ -212,7 +248,9 @@ public final class ScreenshotEditorView extends View {
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         if (selection == null) {
-            selection = ScreenshotSelectionPolicy.initial(width, height, dp(96));
+            float[] preset = selectionForMode(captureMode, width, height);
+            selection = preset == null
+                    ? ScreenshotSelectionPolicy.fullScreen(width, height) : preset;
         } else {
             selection = ScreenshotSelectionPolicy.move(selection, 0f, 0f, width, height);
         }
@@ -231,6 +269,7 @@ public final class ScreenshotEditorView extends View {
             System.arraycopy(bounds, 0, itemBounds[item], 0, 4);
         }
         laidOutItemCount = count;
+        layoutModeBar(width, height);
         layoutWidthChips(width, height);
 
         float closeRadius = dp(CLOSE_RADIUS_DP);
@@ -250,6 +289,11 @@ public final class ScreenshotEditorView extends View {
         float top = toolbarBelowSelection
                 ? toolbarBounds[3] + dp(8)
                 : toolbarBounds[1] - dp(8) - chipHeight;
+        if (!toolbarBelowSelection && modeBarRect.bottom <= toolbarBounds[1]) {
+            // Mode chips already sit above the flipped toolbar; keep width chips above
+            // both rows.
+            top = modeBarRect.top - dp(8) - chipHeight;
+        }
         if (top + chipHeight > height - dp(8)) {
             top = toolbarBounds[1] - dp(8) - chipHeight;
         }
@@ -263,6 +307,27 @@ public final class ScreenshotEditorView extends View {
             chipBounds[index][1] = top;
             chipBounds[index][2] = chipLeft + chipWidth;
             chipBounds[index][3] = top + chipHeight;
+        }
+    }
+
+    private void layoutModeBar(int width, int height) {
+        int count = ScreenshotCaptureMode.values().length;
+        float gap = dp(MODE_CHIP_GAP_DP);
+        float top = selection == null ? 0f : selection[1];
+        if (selection != null && toolbarBounds[3] <= selection[1]) {
+            // The toolbar flipped above the selection; stack the mode chips above it so
+            // the two control rows never overlap.
+            top = Math.min(top, toolbarBounds[1]);
+        }
+        float[] anchor = selection == null ? null
+                : new float[]{selection[0], top, selection[2], selection[3]};
+        float[] bar = ScreenshotModeBarPolicy.barBounds(anchor, count,
+                dp(MODE_CHIP_WIDTH_DP), dp(MODE_CHIP_HEIGHT_DP), gap,
+                width, height, dp(MODE_EDGE_DP), dp(MODE_SELECTION_GAP_DP));
+        modeBarRect.set(bar[0], bar[1], bar[2], bar[3]);
+        for (int index = 0; index < count; index++) {
+            float[] bounds = ScreenshotModeBarPolicy.chipBounds(bar, count, index, gap);
+            System.arraycopy(bounds, 0, modeChipBounds[index], 0, 4);
         }
     }
 
@@ -281,6 +346,7 @@ public final class ScreenshotEditorView extends View {
         drawScrim(canvas);
         drawAnnotations(canvas);
         drawSelection(canvas);
+        drawModeBar(canvas);
         drawToolbar(canvas);
         drawCloseButton(canvas);
         if (tool == Tool.DOODLE || tool == Tool.MOSAIC) {
@@ -330,6 +396,44 @@ public final class ScreenshotEditorView extends View {
     private void drawHandle(Canvas canvas, float x, float y, float radius) {
         canvas.drawCircle(x, y, radius + dp(1), selectionPaint);
         canvas.drawCircle(x, y, radius, handlePaint);
+    }
+
+    /** Capture-mode chips, centred above the crop rectangle. */
+    private void drawModeBar(Canvas canvas) {
+        ScreenshotCaptureMode[] modes = ScreenshotCaptureMode.values();
+        canvas.drawRoundRect(modeBarRect, dp(12), dp(12), modeBarPaint);
+        for (int index = 0; index < modes.length; index++) {
+            float[] bounds = modeChipBounds[index];
+            boolean active = modes[index] == captureMode;
+            if (index == pressedMode) {
+                modeChipPaint.setColor(0x40ffffff);
+                canvas.drawRoundRect(bounds[0], bounds[1], bounds[2], bounds[3],
+                        dp(10), dp(10), modeChipPaint);
+            }
+            if (active) {
+                modeChipPaint.setColor(MODE_ACTIVE_BACKGROUND);
+                canvas.drawRoundRect(bounds[0], bounds[1], bounds[2], bounds[3],
+                        dp(10), dp(10), modeChipPaint);
+            }
+            modeLabelPaint.setColor(active ? TEXT_COLOR : MODE_INACTIVE_TEXT);
+            float centerX = (bounds[0] + bounds[2]) / 2f;
+            float centerY = (bounds[1] + bounds[3]) / 2f;
+            Paint.FontMetrics metrics = modeLabelPaint.getFontMetrics();
+            canvas.drawText(modeLabel(modes[index]), centerX,
+                    centerY - (metrics.ascent + metrics.descent) / 2f, modeLabelPaint);
+        }
+    }
+
+    private static String modeLabel(ScreenshotCaptureMode mode) {
+        switch (mode) {
+            case FULL_SCREEN:
+                return "全屏";
+            case MAIN_SLOT:
+                return "主slot";
+            case REGION:
+            default:
+                return "区域";
+        }
     }
 
     private void drawToolbar(Canvas canvas) {
@@ -511,12 +615,19 @@ public final class ScreenshotEditorView extends View {
         lastX = x;
         lastY = y;
         pressedItem = -1;
+        pressedMode = -1;
         dragMode = DRAG_NONE;
         activeAnnotation = null;
 
         if (closeBounds.contains(x, y)) {
             dragMode = DRAG_NONE;
             pressedItem = -2;
+            invalidate();
+            return true;
+        }
+        int mode = hitModeChip(x, y);
+        if (mode >= 0) {
+            pressedMode = mode;
             invalidate();
             return true;
         }
@@ -591,11 +702,13 @@ public final class ScreenshotEditorView extends View {
 
     private void handleMove(float x, float y) {
         if (dragMode == DRAG_MOVE && selectionAtDown != null) {
+            markRegionMode();
             selection = ScreenshotSelectionPolicy.move(selectionAtDown,
                     x - downX, y - downY, getWidth(), getHeight());
             layoutToolbar(getWidth(), getHeight());
             invalidate();
         } else if (dragMode == DRAG_RESIZE) {
+            markRegionMode();
             selection = ScreenshotSelectionPolicy.resize(selectionAtDown, activeCorner,
                     x, y, dp(96), getWidth(), getHeight());
             layoutToolbar(getWidth(), getHeight());
@@ -621,6 +734,12 @@ public final class ScreenshotEditorView extends View {
     }
 
     private void handleUp(float x, float y) {
+        if (pressedMode >= 0) {
+            int index = pressedMode;
+            resetGesture();
+            applyCaptureMode(ScreenshotCaptureMode.values()[index]);
+            return;
+        }
         if (pressedItem == -2) {
             if (listener != null) {
                 listener.onCloseRequested();
@@ -648,6 +767,7 @@ public final class ScreenshotEditorView extends View {
         dragMode = DRAG_NONE;
         activeCorner = ScreenshotSelectionPolicy.CORNER_NONE;
         pressedItem = -1;
+        pressedMode = -1;
         activeAnnotation = null;
         selectionAtDown = null;
     }
@@ -681,6 +801,58 @@ public final class ScreenshotEditorView extends View {
         }
         layoutToolbar(getWidth(), getHeight());
         invalidate();
+    }
+
+    /** Applies a chip preset and moves the highlight to it. */
+    private void applyCaptureMode(ScreenshotCaptureMode mode) {
+        int width = getWidth();
+        int height = getHeight();
+        if (width <= 0 || height <= 0) {
+            captureMode = mode;
+            return;
+        }
+        float[] preset = selectionForMode(mode, width, height);
+        if (preset == null) {
+            // No usable pane for 主slot; stay on the full frame rather than showing an
+            // empty selection.
+            captureMode = ScreenshotCaptureMode.FULL_SCREEN;
+            preset = ScreenshotSelectionPolicy.fullScreen(width, height);
+        } else {
+            captureMode = mode;
+        }
+        selection = preset;
+        layoutToolbar(width, height);
+        invalidate();
+    }
+
+    private float[] selectionForMode(ScreenshotCaptureMode mode, int width, int height) {
+        switch (mode) {
+            case MAIN_SLOT:
+                return ScreenshotSelectionPolicy.clampToScreen(
+                        mainSlotBounds, width, height, 1f);
+            case REGION:
+                return ScreenshotSelectionPolicy.initial(width, height, dp(96));
+            case FULL_SCREEN:
+            default:
+                return ScreenshotSelectionPolicy.fullScreen(width, height);
+        }
+    }
+
+    /** Dragging the rectangle means the user is refining a free region. */
+    private void markRegionMode() {
+        if (captureMode != ScreenshotCaptureMode.REGION) {
+            captureMode = ScreenshotCaptureMode.REGION;
+        }
+    }
+
+    private int hitModeChip(float x, float y) {
+        for (int index = 0; index < modeChipBounds.length; index++) {
+            float[] bounds = modeChipBounds[index];
+            if (x >= bounds[0] && x <= bounds[2] && y >= bounds[1] && y <= bounds[3]) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private int hitToolbarItem(float x, float y) {

@@ -30,6 +30,7 @@ public final class ScreenshotEditorActivity extends Activity
     private static final String TAG = "OneStepScreenshot";
     private static Bitmap pendingBitmap;
     private static int pendingDisplayId;
+    private static float[] pendingMainSlotBounds;
     private static Runnable pendingOnClosed;
     private static volatile long lastCreatedUptime;
 
@@ -46,10 +47,11 @@ public final class ScreenshotEditorActivity extends Activity
      * fallback when the shell command fails.</p>
      */
     public static long start(Activity host, Bitmap bitmap, int displayId,
-                             Runnable onClosed,
+                             float[] mainSlotBounds, Runnable onClosed,
                              ScreenshotCaptureClient.CommandRunner runner) {
         pendingBitmap = bitmap;
         pendingDisplayId = displayId;
+        pendingMainSlotBounds = mainSlotBounds == null ? null : mainSlotBounds.clone();
         pendingOnClosed = onClosed;
         lastCreatedUptime = 0L;
         final long requestUptime = SystemClock.uptimeMillis();
@@ -109,6 +111,7 @@ public final class ScreenshotEditorActivity extends Activity
     private static void clearPending() {
         pendingBitmap = null;
         pendingDisplayId = 0;
+        pendingMainSlotBounds = null;
         pendingOnClosed = null;
     }
 
@@ -129,13 +132,14 @@ public final class ScreenshotEditorActivity extends Activity
 
         Bitmap bitmap = pendingBitmap;
         int displayId = pendingDisplayId;
+        float[] mainSlotBounds = pendingMainSlotBounds;
         onClosed = pendingOnClosed;
         clearPending();
         if (bitmap == null) {
             finish();
             return;
         }
-        controller = new ScreenshotController(this, bitmap, displayId, this);
+        controller = new ScreenshotController(this, bitmap, displayId, mainSlotBounds, this);
         if (!controller.show()) {
             controller = null;
             bitmap.recycle();

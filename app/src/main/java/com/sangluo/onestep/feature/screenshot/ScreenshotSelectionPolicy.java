@@ -30,6 +30,32 @@ public final class ScreenshotSelectionPolicy {
         return new float[]{left, top, left + side, top + side};
     }
 
+    /** Whole-display selection; used by the default 全屏 capture mode. */
+    public static float[] fullScreen(float screenWidth, float screenHeight) {
+        return new float[]{0f, 0f, Math.max(0f, screenWidth), Math.max(0f, screenHeight)};
+    }
+
+    /**
+     * Clamps {@code rect} to the screen. Returns {@code null} when the clamped rectangle
+     * has less than {@code minSizePx} on either axis, so the caller can fall back to
+     * another preset.
+     */
+    public static float[] clampToScreen(float[] rect, float screenWidth,
+                                        float screenHeight, float minSizePx) {
+        if (rect == null || rect.length < 4) {
+            return null;
+        }
+        float left = Math.max(0f, Math.min(rect[0], rect[2]));
+        float right = Math.min(Math.max(0f, screenWidth), Math.max(rect[0], rect[2]));
+        float top = Math.max(0f, Math.min(rect[1], rect[3]));
+        float bottom = Math.min(Math.max(0f, screenHeight), Math.max(rect[1], rect[3]));
+        float min = Math.max(0f, minSizePx);
+        if (right - left < min || bottom - top < min) {
+            return null;
+        }
+        return new float[]{left, top, right, bottom};
+    }
+
     /** Moves the rectangle by a delta while keeping it fully on screen. */
     public static float[] move(float[] bounds, float dx, float dy,
                                float screenWidth, float screenHeight) {

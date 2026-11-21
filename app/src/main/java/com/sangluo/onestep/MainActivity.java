@@ -10544,6 +10544,7 @@ public class MainActivity extends Activity {
             return;
         }
         final int displayId = getActivityDisplayId();
+        final float[] mainSlotBounds = mainSlotBoundsForScreenshot();
         if (floatingBallController != null) {
             floatingBallController.hideForScreenshot();
         }
@@ -10555,7 +10556,8 @@ public class MainActivity extends Activity {
             mediaRootExecutor.execute(() -> {
                 Bitmap bitmap = ScreenshotCaptureClient.capture(
                         this, displayId, persistentRootShell::run);
-                mainHandler.post(() -> finishScreenshotCapture(bitmap, displayId));
+                mainHandler.post(() ->
+                        finishScreenshotCapture(bitmap, displayId, mainSlotBounds));
             });
         };
         // Two frames let the ball and ring disappear from the composition.
@@ -10564,7 +10566,8 @@ public class MainActivity extends Activity {
                 () -> decor.postDelayed(capture, SCREENSHOT_SETTLE_DELAY_MS)));
     }
 
-    private void finishScreenshotCapture(Bitmap bitmap, int displayId) {
+    private void finishScreenshotCapture(Bitmap bitmap, int displayId,
+                                         float[] mainSlotBounds) {
         if (activityDestroyed) {
             if (bitmap != null) {
                 bitmap.recycle();
@@ -10578,7 +10581,8 @@ public class MainActivity extends Activity {
             return;
         }
         screenshotEditorOpen = true;
-        final long requestUptime = ScreenshotEditorActivity.start(this, bitmap, displayId, () -> {
+        final long requestUptime = ScreenshotEditorActivity.start(
+                this, bitmap, displayId, mainSlotBounds, () -> {
             screenshotEditorOpen = false;
             restoreFloatingBallAfterScreenshot();
         }, persistentRootShell::run);
@@ -10592,6 +10596,15 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "无法显示截图编辑器", Toast.LENGTH_SHORT).show();
             restoreFloatingBallAfterScreenshot();
         }, SCREENSHOT_EDITOR_LAUNCH_TIMEOUT_MS);
+    }
+
+    /** Active main slot bounds in display pixels, consumed by the 主slot capture mode. */
+    private float[] mainSlotBoundsForScreenshot() {
+        Rect pane = getMainPaneScreenRect();
+        if (pane == null || pane.width() <= 0 || pane.height() <= 0) {
+            return null;
+        }
+        return new float[]{pane.left, pane.top, pane.right, pane.bottom};
     }
 
     private void restoreFloatingBallAfterScreenshot() {

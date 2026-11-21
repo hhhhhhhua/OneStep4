@@ -64,7 +64,7 @@ public final class ScreenshotController implements ScreenshotEditorView.Listener
     private float pendingTextY;
 
     public ScreenshotController(Activity activity, Bitmap source, int displayId,
-                                Listener listener) {
+                                float[] mainSlotBounds, Listener listener) {
         this.activity = activity;
         this.source = source;
         this.displayId = displayId;
@@ -82,6 +82,7 @@ public final class ScreenshotController implements ScreenshotEditorView.Listener
                 FrameLayout.LayoutParams.MATCH_PARENT));
         this.editorView = new ScreenshotEditorView(activity, source, displayScale);
         this.editorView.setListener(this);
+        this.editorView.setMainSlotBounds(mainSlotBounds);
         root.addView(editorView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         this.displayManager =
